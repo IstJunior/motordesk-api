@@ -1,0 +1,27 @@
+{
+  "name": "motordesk-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MotorDesk — API del plano de control + tenant (Hono + Prisma, multi-tenant).",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "prisma generate && tsc",
+    "start": "node dist/index.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate deploy"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "@prisma/client": "^6.19.3",
+    "hono": "^4.6.14",
+    "jose": "^5.9.6",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "prisma": "^6.19.3",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

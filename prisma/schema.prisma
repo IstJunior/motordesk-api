@@ -1,0 +1,1301 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider     = "postgresql"
+  url          = env("DATABASE_URL")
+  directUrl    = env("DIRECT_URL")
+  relationMode = "prisma"
+}
+
+enum AiStatus {
+  pending
+  processing
+  done
+  failed
+}
+
+model User {
+  id              BigInt    @id @default(autoincrement())
+  authId          String?   @unique @map("auth_id") @db.Uuid
+  name            String    @db.VarChar(255)
+  email           String    @unique @db.VarChar(255)
+  phone           String?   @db.VarChar(32)
+  emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamp(0)
+  password        String    @db.VarChar(255)
+  rememberToken   String?   @map("remember_token") @db.VarChar(100)
+  isSuperAdmin    Boolean   @default(false) @map("is_super_admin")
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdAt       DateTime? @map("created_at") @db.Timestamp(0)
+  updatedAt       DateTime? @map("updated_at") @db.Timestamp(0)
+
+  vehicles                  Vehicle[]
+  appointments              Appointment[]              @relation("AppointmentUser")
+  workshops                 WorkshopUser[]
+  technicianAppointments    Appointment[]              @relation("AppointmentTechnician")
+  payments                  Payment[]
+  paymentRequests           PaymentRequest[]
+  paymentsCreated           Payment[]                  @relation("PaymentCreatedBy")
+  technicianSchedules       TechnicianSchedule[]
+  manuals                   TechnicalManual[]
+  broadcasts                Broadcast[]
+  completedChecklistItems   AppointmentChecklistItem[] @relation("ChecklistItemCompletedBy")
+  vehicleModels             VehicleModel[]             @relation("VehicleModelCreator")
+  uploadedPhotos            AppointmentPhoto[]         @relation("PhotoUploadedBy")
+  notifications             Notification[]
+  notificationPreferences   NotificationPreference[]
+  pushSubscriptions         PushSubscription[]
+  notificationDeliveries    NotificationDelivery[]
+  inventoryMovementsCreated InventoryMovement[]        @relation("InventoryMovementCreatedBy")
+  customerBillingProfile    CustomerBillingProfile?
+  sales                     Sale[]                     @relation("SaleCustomer")
+  salesCreated              Sale[]                     @relation("SaleCreatedBy")
+  electronicInvoices        ElectronicInvoice[]        @relation("ElectronicInvoiceCustomer")
+
+  @@map("users")
+}
+
+model Workshop {
+  id                 BigInt    @id @default(autoincrement())
+  name               String    @db.VarChar(255)
+  slug               String    @unique @db.VarChar(255)
+  // Código de taller (formato T-0001). Se genera una sola vez al registrarse.
+  code               String?   @unique @db.VarChar(16)
+  email              String    @unique @db.VarChar(255)
+  phone              String?   @db.VarChar(255)
+  address            String?   @db.VarChar(255)
+  city               String?   @db.VarChar(255)
+  country            String    @default("CO") @db.VarChar(2)
+  taxId              String?   @map("tax_id") @db.VarChar(255)
+  description        String?
+  website            String?   @db.VarChar(255)
+  vehicleTypes       Json?     @map("vehicle_types")
+  workshopType       String    @default("mixed_vehicle") @map("workshop_type") @db.VarChar(64)
+  landingConfig      Json?     @map("landing_config")
+  // Sistema de módulos por taller (superadmin activa/desactiva). Flags {modulo: bool}.
+  enabledModules     Json?     @map("enabled_modules")
+  // WhatsApp propio del taller (sesión en el gateway openwa; clientes → bandeja del taller).
+  whatsappSession    String?   @map("whatsapp_session") @db.VarChar(64)
+  whatsappStatus     String?   @map("whatsapp_status") @db.VarChar(32)
+  isActive           Boolean   @default(true) @map("is_active")
+  trialEndsAt        DateTime? @map("trial_ends_at") @db.Timestamp(0)
+  subscriptionStatus String    @default("trial") @map("subscription_status") @db.VarChar(255)
+  createdAt          DateTime? @map("created_at") @db.Timestamp(0)
+  updatedAt          DateTime? @map("updated_at") @db.Timestamp(0)
+  deletedAt          DateTime? @map("deleted_at") @db.Timestamp(0)
+
+  users                        WorkshopUser[]
+  theme                        WorkshopTheme?
+  services                     Service[]
+  branches                     WorkshopBranch[]
+  appointments                 Appointment[]
+  payments                     Payment[]
+  schedules                    WorkshopSchedule[]
+  technicianSchedules          TechnicianSchedule[]
+  aiSummaries                  AiSummary[]
+  workshopAiConfigs            WorkshopAiConfig[]
+  checklistTemplates           ChecklistTemplate[]
+  subscription                 Subscription?
+  invoices                     Invoice[]
+  paymentTransactions          PaymentTransaction[]
+  notifications                Notification[]
+  notificationPreferences      NotificationPreference[]
+  pushSubscriptions            PushSubscription[]
+  notificationDeliveries       NotificationDelivery[]
+  inventoryItems               InventoryItem[]
+  inventoryMovements           InventoryMovement[]
+  paymentGatewayConfigs        WorkshopPaymentGatewayConfig[]
+  paymentRequests              PaymentRequest[]
+  workshopPaymentWebhookEvents WorkshopPaymentWebhookEvent[]
+  fiscalProfile                WorkshopFiscalProfile?
+  factusConfig                 WorkshopFactusConfig?
+  sales                        Sale[]
+  electronicInvoices           ElectronicInvoice[]
+  chatSessions                 ChatSession[]
+
+  @@index([isActive])
+  @@index([workshopType])
+  @@index([slug])
+  @@map("workshops")
+}
+
+model WorkshopBranch {
+  id         BigInt    @id @default(autoincrement())
+  workshopId BigInt    @map("workshop_id")
+  name       String    @db.VarChar(255)
+  address    String?   @db.VarChar(255)
+  city       String?   @db.VarChar(255)
+  country    String    @default("CO") @db.VarChar(2)
+  phone      String?   @db.VarChar(255)
+  mapsUrl    String?   @map("maps_url") @db.VarChar(500)
+  isPrimary  Boolean   @default(false) @map("is_primary")
+  isActive   Boolean   @default(true) @map("is_active")
+  sortOrder  Int       @default(0) @map("sort_order")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamp(0)
+
+  workshop     Workshop      @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+
+  @@index([workshopId, isActive, sortOrder])
+  @@index([workshopId, isPrimary])
+  @@map("workshop_branches")
+}
+
+model WorkshopUser {
+  id         BigInt    @id @default(autoincrement())
+  workshopId BigInt    @map("workshop_id")
+  userId     BigInt    @map("user_id")
+  role       String    @default("client") @db.VarChar(255)
+  isOwner    Boolean   @default(false) @map("is_owner")
+  createdAt  DateTime? @map("created_at") @db.Timestamp(0)
+  updatedAt  DateTime? @map("updated_at") @db.Timestamp(0)
+
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workshopId])
+  @@map("workshop_user")
+}
+
+model Vehicle {
+  id             BigInt    @id @default(autoincrement())
+  userId         BigInt    @map("user_id")
+  vehicleModelId BigInt?   @map("vehicle_model_id")
+  type           String    @default("car") @db.VarChar(30)
+  brand          String    @db.VarChar(255)
+  model          String    @db.VarChar(255)
+  year           Int
+  licensePlate   String?   @map("license_plate") @db.VarChar(255)
+  color          String?   @db.VarChar(255)
+  vin            String?   @db.VarChar(255)
+  kilometers     Int       @default(0)
+  engineType     String?   @map("engine_type") @db.VarChar(255)
+  transmission   String?   @db.VarChar(255)
+  notes          String?
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime? @map("created_at") @db.Timestamp(0)
+  updatedAt      DateTime? @map("updated_at") @db.Timestamp(0)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamp(0)
+
+  user         User          @relation(fields: [userId], references: [id])
+  vehicleModel VehicleModel? @relation(fields: [vehicleModelId], references: [id])
+  appointments Appointment[]
+
+  @@index([vehicleModelId])
+  @@index([licensePlate])
+  @@index([userId])
+  @@map("vehicles")
+}
+
+model Service {
+  id              BigInt    @id @default(autoincrement())
+  workshopId      BigInt    @map("workshop_id")
+  name            String    @db.VarChar(255)
+  description     String?
+  durationMinutes Int       @default(60) @map("duration_minutes")
+  priceCar        Decimal   @default(0) @map("price_car") @db.Decimal(12, 2)
+  priceMotorcycle Decimal   @default(0) @map("price_motorcycle") @db.Decimal(12, 2)
+  priceSuv        Decimal   @default(0) @map("price_suv") @db.Decimal(12, 2)
+  priceTruck      Decimal   @default(0) @map("price_truck") @db.Decimal(12, 2)
+  priceAtv        Decimal?  @map("price_atv") @db.Decimal(10, 2)
+  priceVan        Decimal?  @map("price_van") @db.Decimal(10, 2)
+  priceElectric   Decimal?  @map("price_electric") @db.Decimal(10, 2)
+  priceEscooter   Decimal?  @map("price_escooter") @db.Decimal(10, 2)
+  pricePickup     Decimal?  @map("price_pickup") @db.Decimal(10, 2)
+  isActive        Boolean   @default(true) @map("is_active")
+  createdAt       DateTime? @map("created_at") @db.Timestamp(0)
+  updatedAt       DateTime? @map("updated_at") @db.Timestamp(0)
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamp(0)
+
+  workshop            Workshop             @relation(fields: [workshopId], references: [id])
+  appointments        Appointment[]
+  appointmentServices AppointmentService[]
+  checklistTemplates  ChecklistTemplate[]
+
+  @@index([workshopId])
+  @@map("services")
+}
+
+model InventoryItem {
+  id               BigInt    @id @default(autoincrement())
+  workshopId       BigInt    @map("workshop_id")
+  sku              String?   @db.VarChar(80)
+  name             String    @db.VarChar(255)
+  category         String?   @db.VarChar(120)
+  itemType         String    @default("consumable") @map("item_type") @db.VarChar(32)
+  tracksStock      Boolean   @default(true) @map("tracks_stock")
+  unit             String    @default("unidad") @db.VarChar(50)
+  costPrice        Decimal   @default(0) @map("cost_price") @db.Decimal(12, 2)
+  stockQuantity    Decimal   @default(0) @map("stock_quantity") @db.Decimal(12, 3)
+  minStockQuantity Decimal   @default(0) @map("min_stock_quantity") @db.Decimal(12, 3)
+  serialNumber     String?   @map("serial_number") @db.VarChar(120)
+  storageLocation  String?   @map("storage_location") @db.VarChar(180)
+  assetStatus      String?   @map("asset_status") @db.VarChar(32)
+  assignedTo       String?   @map("assigned_to") @db.VarChar(180)
+  acquiredAt       DateTime? @map("acquired_at") @db.Date
+  isActive         Boolean   @default(true) @map("is_active")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamp(0)
+
+  workshop  Workshop            @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  movements InventoryMovement[]
+  saleItems SaleItem[]
+
+  @@unique([workshopId, sku])
+  @@index([workshopId, isActive, name])
+  @@index([workshopId, category])
+  @@index([workshopId, itemType])
+  @@map("inventory_items")
+}
+
+model InventoryMovement {
+  id          BigInt   @id @default(autoincrement())
+  workshopId  BigInt   @map("workshop_id")
+  itemId      BigInt   @map("item_id")
+  createdById BigInt?  @map("created_by_id")
+  type        String   @db.VarChar(32)
+  quantity    Decimal  @db.Decimal(12, 3)
+  unitCost    Decimal? @map("unit_cost") @db.Decimal(12, 2)
+  note        String?
+  stockBefore Decimal  @map("stock_before") @db.Decimal(12, 3)
+  stockAfter  Decimal  @map("stock_after") @db.Decimal(12, 3)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+
+  workshop  Workshop      @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  item      InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  createdBy User?         @relation("InventoryMovementCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([workshopId, createdAt])
+  @@index([itemId, createdAt])
+  @@index([createdById])
+  @@map("inventory_movements")
+}
+
+model Appointment {
+  id               BigInt    @id @default(autoincrement())
+  workshopId       BigInt    @map("workshop_id")
+  userId           BigInt?   @map("user_id")
+  vehicleId        BigInt    @map("vehicle_id")
+  serviceId        BigInt?   @map("service_id")
+  branchId         BigInt?   @map("branch_id")
+  technicianId     BigInt?   @map("technician_id")
+  scheduledAt      DateTime  @map("scheduled_at") @db.Timestamp(0)
+  estimatedEndAt   DateTime? @map("estimated_end_at") @db.Timestamp(0)
+  startedAt        DateTime? @map("started_at") @db.Timestamp(0)
+  completedAt      DateTime? @map("completed_at") @db.Timestamp(0)
+  status           String    @default("pending") @db.VarChar(255)
+  customerSymptoms String?   @map("customer_symptoms")
+  internalNotes    String?   @map("internal_notes")
+  totalAmount      Decimal   @default(0) @map("total_amount") @db.Decimal(12, 2)
+  paymentMethod    String?   @map("payment_method") @db.VarChar(255)
+  paymentStatus    String    @default("pending") @map("payment_status") @db.VarChar(255)
+  aiStatus         AiStatus  @default(pending) @map("ai_status")
+  createdAt        DateTime? @map("created_at") @db.Timestamp(0)
+  updatedAt        DateTime? @map("updated_at") @db.Timestamp(0)
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamp(0)
+
+  workshop               Workshop               @relation(fields: [workshopId], references: [id])
+  user                   User?                  @relation("AppointmentUser", fields: [userId], references: [id])
+  vehicle                Vehicle                @relation(fields: [vehicleId], references: [id])
+  service                Service?               @relation(fields: [serviceId], references: [id])
+  branch                 WorkshopBranch?        @relation(fields: [branchId], references: [id])
+  technician             User?                  @relation("AppointmentTechnician", fields: [technicianId], references: [id])
+  aiSummary              AiSummary?
+  payments               Payment[]
+  paymentRequests        PaymentRequest[]
+  checklist              AppointmentChecklist?
+  appointmentServices    AppointmentService[]
+  photos                 AppointmentPhoto[]
+  notifications          Notification[]
+  notificationDeliveries NotificationDelivery[]
+  electronicInvoices     ElectronicInvoice[]
+
+  @@index([scheduledAt])
+  @@index([status])
+  @@index([technicianId])
+  @@index([userId])
+  @@index([vehicleId])
+  @@index([branchId])
+  @@index([workshopId])
+  @@map("appointments")
+}
+
+model AppointmentService {
+  appointmentId BigInt @map("appointment_id")
+  serviceId     BigInt @map("service_id")
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  service     Service     @relation(fields: [serviceId], references: [id])
+
+  @@id([appointmentId, serviceId])
+  @@map("appointment_services")
+}
+
+model AiSummary {
+  id               BigInt    @id @default(autoincrement())
+  appointmentId    BigInt    @unique @map("appointment_id")
+  workshopId       BigInt    @map("workshop_id")
+  provider         String    @db.VarChar(255)
+  model            String    @db.VarChar(255)
+  rawSymptoms      String    @map("raw_symptoms")
+  customerSummary  String    @map("customer_summary")
+  technicianReport String    @map("technician_report")
+  diagnoses        Json?
+  urgencyLevel     String?   @map("urgency_level") @db.VarChar(255)
+  tokensUsed       Int       @default(0) @map("tokens_used")
+  costUsd          Decimal   @default(0) @map("cost_usd") @db.Decimal(8, 6)
+  createdAt        DateTime? @map("created_at") @db.Timestamp(0)
+  updatedAt        DateTime? @map("updated_at") @db.Timestamp(0)
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id])
+  workshop    Workshop    @relation(fields: [workshopId], references: [id])
+
+  @@map("ai_summaries")
+}
+
+model Payment {
+  id                   BigInt    @id @default(autoincrement())
+  workshopId           BigInt    @map("workshop_id")
+  appointmentId        BigInt    @map("appointment_id")
+  userId               BigInt    @map("user_id")
+  referenceCode        String    @map("reference_code") @db.VarChar(255)
+  method               String    @db.VarChar(255)
+  status               String    @db.VarChar(255)
+  amount               Decimal   @db.Decimal(12, 2)
+  surchargeAmount      Decimal   @default(0) @map("surcharge_amount") @db.Decimal(12, 2)
+  totalAmount          Decimal   @map("total_amount") @db.Decimal(12, 2)
+  currency             String    @db.VarChar(3)
+  gatewayResponse      Json?     @map("gateway_response")
+  gatewayTransactionId String?   @map("gateway_transaction_id") @db.VarChar(255)
+  provider             String?   @db.VarChar(32)
+  paymentRequestId     BigInt?   @map("payment_request_id")
+  createdById          BigInt?   @map("created_by_id")
+  notes                String?
+  paidAt               DateTime? @map("paid_at") @db.Timestamp(0)
+  createdAt            DateTime? @map("created_at") @db.Timestamp(0)
+  updatedAt            DateTime? @map("updated_at") @db.Timestamp(0)
+
+  workshop           Workshop            @relation(fields: [workshopId], references: [id])
+  appointment        Appointment         @relation(fields: [appointmentId], references: [id], map: "payment_appointment_fk")
+  user               User                @relation(fields: [userId], references: [id])
+  paymentRequest     PaymentRequest?     @relation(fields: [paymentRequestId], references: [id])
+  createdBy          User?               @relation("PaymentCreatedBy", fields: [createdById], references: [id])
+  electronicInvoices ElectronicInvoice[]
+
+  @@index([paymentRequestId])
+  @@index([createdById])
+  @@index([provider, status])
+  @@map("payments")
+}
+
+model WorkshopPaymentGatewayConfig {
+  id                     BigInt    @id @default(autoincrement())
+  workshopId             BigInt    @map("workshop_id")
+  provider               String    @db.VarChar(32)
+  environment            String    @default("sandbox") @db.VarChar(32)
+  enabled                Boolean   @default(false)
+  displayName            String?   @map("display_name") @db.VarChar(120)
+  credentialsEncrypted   String?   @map("credentials_encrypted")
+  publicConfig           Json?     @map("public_config")
+  webhookSecretEncrypted String?   @map("webhook_secret_encrypted")
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+  deletedAt              DateTime? @map("deleted_at") @db.Timestamp(0)
+
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+
+  @@unique([workshopId, provider])
+  @@index([workshopId, enabled])
+  @@map("workshop_payment_gateway_configs")
+}
+
+model PaymentRequest {
+  id                    BigInt    @id @default(autoincrement())
+  workshopId            BigInt    @map("workshop_id")
+  appointmentId         BigInt?   @map("appointment_id")
+  userId                BigInt?   @map("user_id")
+  paymentId             BigInt?   @map("payment_id")
+  provider              String    @db.VarChar(32)
+  channel               String    @db.VarChar(32)
+  referenceCode         String    @map("reference_code") @db.VarChar(255)
+  status                String    @default("draft") @db.VarChar(32)
+  amount                Decimal   @db.Decimal(12, 2)
+  currency              String    @default("COP") @db.VarChar(3)
+  description           String?
+  paymentUrl            String?   @map("payment_url")
+  qrImageBase64         String?   @map("qr_image_base64")
+  providerPaymentId     String?   @map("provider_payment_id") @db.VarChar(255)
+  providerTransactionId String?   @map("provider_transaction_id") @db.VarChar(255)
+  expiresAt             DateTime? @map("expires_at") @db.Timestamp(0)
+  sentAt                DateTime? @map("sent_at") @db.Timestamp(0)
+  paidAt                DateTime? @map("paid_at") @db.Timestamp(0)
+  metadata              Json?
+  providerResponse      Json?     @map("provider_response")
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  workshop    Workshop     @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  appointment Appointment? @relation(fields: [appointmentId], references: [id])
+  user        User?        @relation(fields: [userId], references: [id])
+  payments    Payment[]
+
+  @@unique([workshopId, referenceCode])
+  @@index([workshopId, status])
+  @@index([provider, referenceCode])
+  @@index([appointmentId])
+  @@index([userId])
+  @@map("payment_requests")
+}
+
+model WorkshopPaymentWebhookEvent {
+  id                    BigInt    @id @default(autoincrement())
+  provider              String    @db.VarChar(32)
+  eventId               String    @map("event_id") @db.VarChar(255)
+  workshopId            BigInt?   @map("workshop_id")
+  referenceCode         String?   @map("reference_code") @db.VarChar(255)
+  providerTransactionId String?   @map("provider_transaction_id") @db.VarChar(255)
+  signatureValid        Boolean   @default(false) @map("signature_valid")
+  processedAt           DateTime? @map("processed_at") @db.Timestamp(0)
+  rawPayload            Json      @map("raw_payload")
+  errorMessage          String?   @map("error_message")
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+
+  workshop Workshop? @relation(fields: [workshopId], references: [id])
+
+  @@unique([provider, eventId])
+  @@index([provider, referenceCode])
+  @@index([workshopId])
+  @@map("workshop_payment_webhook_events")
+}
+
+model WorkshopTheme {
+  id              BigInt    @id @default(autoincrement())
+  workshopId      BigInt    @unique @map("workshop_id")
+  primaryColor    String    @map("primary_color") @db.VarChar(7)
+  secondaryColor  String    @map("secondary_color") @db.VarChar(7)
+  accentColor     String    @map("accent_color") @db.VarChar(7)
+  backgroundColor String    @map("background_color") @db.VarChar(7)
+  surfaceColor    String    @map("surface_color") @db.VarChar(7)
+  textColor       String    @map("text_color") @db.VarChar(7)
+  textMutedColor  String    @map("text_muted_color") @db.VarChar(7)
+  successColor    String    @map("success_color") @db.VarChar(7)
+  dangerColor     String    @map("danger_color") @db.VarChar(7)
+  logoPath        String?   @map("logo_path") @db.VarChar(255)
+  faviconPath     String?   @map("favicon_path") @db.VarChar(255)
+  fontHeading     String    @map("font_heading") @db.VarChar(255)
+  fontBody        String    @map("font_body") @db.VarChar(255)
+  fontMono        String    @map("font_mono") @db.VarChar(255)
+  createdAt       DateTime? @map("created_at") @db.Timestamp(0)
+  updatedAt       DateTime? @map("updated_at") @db.Timestamp(0)
+
+  workshop Workshop @relation(fields: [workshopId], references: [id])
+
+  @@map("workshop_themes")
+}
+
+model WorkshopSchedule {
+  id         BigInt    @id @default(autoincrement())
+  workshopId BigInt    @map("workshop_id")
+  dayOfWeek  String    @map("day_of_week") @db.VarChar(255)
+  opensAt    DateTime  @default(dbgenerated("'08:00:00'::time without time zone")) @map("opens_at") @db.Time(0)
+  closesAt   DateTime  @default(dbgenerated("'18:00:00'::time without time zone")) @map("closes_at") @db.Time(0)
+  isClosed   Boolean   @default(false) @map("is_closed")
+  createdAt  DateTime? @map("created_at") @db.Timestamp(0)
+  updatedAt  DateTime? @map("updated_at") @db.Timestamp(0)
+
+  workshop Workshop @relation(fields: [workshopId], references: [id])
+
+  @@unique([workshopId, dayOfWeek])
+  @@map("workshop_schedules")
+}
+
+model TechnicianSchedule {
+  id          BigInt    @id @default(autoincrement())
+  workshopId  BigInt    @map("workshop_id")
+  userId      BigInt    @map("user_id")
+  dayOfWeek   String    @map("day_of_week") @db.VarChar(255)
+  startsAt    DateTime  @default(dbgenerated("'08:00:00'::time without time zone")) @map("starts_at") @db.Time(0)
+  endsAt      DateTime  @default(dbgenerated("'18:00:00'::time without time zone")) @map("ends_at") @db.Time(0)
+  isAvailable Boolean   @default(true) @map("is_available")
+  createdAt   DateTime? @map("created_at") @db.Timestamp(0)
+  updatedAt   DateTime? @map("updated_at") @db.Timestamp(0)
+
+  workshop Workshop @relation(fields: [workshopId], references: [id])
+  user     User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, dayOfWeek])
+  @@index([workshopId])
+  @@map("technician_schedules")
+}
+
+model TechnicalManual {
+  id            BigInt    @id @default(autoincrement())
+  title         String    @db.VarChar
+  slug          String    @db.VarChar
+  brand         String    @db.VarChar
+  model         String    @db.VarChar
+  year          Int
+  engineType    String?   @map("engine_type") @db.VarChar
+  category      String    @db.VarChar
+  filePath      String    @map("file_path") @db.VarChar
+  imagePaths    Json?     @map("image_paths")
+  extractedText String?   @map("extracted_text")
+  fileSize      Int?      @map("file_size")
+  mimeType      String?   @map("mime_type") @db.VarChar
+  pagesCount    Int?      @map("pages_count")
+  isActive      Boolean   @default(true) @map("is_active")
+  isFeatured    Boolean   @default(false) @map("is_featured")
+  uploadedBy    BigInt?   @map("uploaded_by")
+  createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt     DateTime? @default(now()) @map("updated_at") @db.Timestamp(6)
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamp(6)
+
+  uploader User? @relation(fields: [uploadedBy], references: [id])
+
+  @@map("technical_manuals")
+}
+
+model Broadcast {
+  id              BigInt    @id @default(autoincrement())
+  subject         String    @db.VarChar(255)
+  content         String
+  segment         String    @db.VarChar(255)
+  recipientsCount Int       @default(0) @map("recipients_count")
+  userId          BigInt    @map("user_id")
+  createdAt       DateTime? @map("created_at") @db.Timestamp(0)
+  updatedAt       DateTime? @map("updated_at") @db.Timestamp(0)
+
+  sender User @relation(fields: [userId], references: [id])
+
+  @@map("broadcasts")
+}
+
+model SystemSetting {
+  id        BigInt    @id @default(autoincrement())
+  key       String    @unique @db.VarChar(255)
+  value     Json?
+  type      String?   @db.VarChar(255)
+  group     String?   @db.VarChar(255)
+  createdAt DateTime? @map("created_at") @db.Timestamp(0)
+  updatedAt DateTime? @map("updated_at") @db.Timestamp(0)
+
+  @@map("system_settings")
+}
+
+model WorkshopFiscalProfile {
+  id                  BigInt   @id @default(autoincrement())
+  workshopId          BigInt   @unique @map("workshop_id")
+  personType          String   @default("natural") @map("person_type") @db.VarChar(32)
+  documentType        String?  @map("document_type") @db.VarChar(32)
+  documentNumber      String?  @map("document_number") @db.VarChar(64)
+  dv                  String?  @db.VarChar(2)
+  legalName           String?  @map("legal_name") @db.VarChar(255)
+  tradeName           String?  @map("trade_name") @db.VarChar(255)
+  address             String?  @db.VarChar(255)
+  city                String?  @db.VarChar(120)
+  municipalityCode    String?  @map("municipality_code") @db.VarChar(16)
+  email               String?  @db.VarChar(255)
+  phone               String?  @db.VarChar(80)
+  taxRegime           String?  @map("tax_regime") @db.VarChar(80)
+  taxResponsibilities Json?    @map("tax_responsibilities")
+  status              String   @default("incomplete") @db.VarChar(32)
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("workshop_fiscal_profiles")
+}
+
+model WorkshopFactusConfig {
+  id                       BigInt    @id @default(autoincrement())
+  workshopId               BigInt    @unique @map("workshop_id")
+  environment              String    @default("sandbox") @db.VarChar(32)
+  enabled                  Boolean   @default(false)
+  baseUrl                  String?   @map("base_url") @db.VarChar(255)
+  credentialsEncrypted     String?   @map("credentials_encrypted")
+  companyData              Json?     @map("company_data")
+  numberingRanges          Json?     @map("numbering_ranges")
+  activeNumberingRangeId   Int?      @map("active_numbering_range_id")
+  activeNumberingRangeData Json?     @map("active_numbering_range_data")
+  status                   String    @default("disabled") @db.VarChar(32)
+  lastTestAt               DateTime? @map("last_test_at") @db.Timestamp(0)
+  lastError                String?   @map("last_error")
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt                DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([environment, enabled])
+  @@map("workshop_factus_configs")
+}
+
+model CustomerBillingProfile {
+  id                         BigInt   @id @default(autoincrement())
+  userId                     BigInt   @unique @map("user_id")
+  personType                 String   @default("natural") @map("person_type") @db.VarChar(32)
+  identificationDocumentCode String?  @map("identification_document_code") @db.VarChar(16)
+  identification             String?  @db.VarChar(64)
+  dv                         String?  @db.VarChar(2)
+  legalOrganizationCode      String   @default("2") @map("legal_organization_code") @db.VarChar(8)
+  tributeCode                String   @default("ZZ") @map("tribute_code") @db.VarChar(8)
+  company                    String?  @db.VarChar(255)
+  tradeName                  String?  @map("trade_name") @db.VarChar(255)
+  names                      String?  @db.VarChar(255)
+  address                    String?  @db.VarChar(255)
+  email                      String?  @db.VarChar(255)
+  phone                      String?  @db.VarChar(80)
+  municipalityCode           String?  @map("municipality_code") @db.VarChar(16)
+  createdAt                  DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt                  DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("customer_billing_profiles")
+}
+
+model Sale {
+  id                  BigInt    @id @default(autoincrement())
+  workshopId          BigInt    @map("workshop_id")
+  customerId          BigInt?   @map("customer_id")
+  createdById         BigInt?   @map("created_by_id")
+  referenceCode       String    @map("reference_code") @db.VarChar(255)
+  customerMode        String    @default("final_consumer") @map("customer_mode") @db.VarChar(32)
+  finalConsumerReason String?   @map("final_consumer_reason") @db.VarChar(64)
+  status              String    @default("paid") @db.VarChar(32)
+  paymentStatus       String    @default("paid") @map("payment_status") @db.VarChar(32)
+  paymentMethod       String    @default("manual") @map("payment_method") @db.VarChar(64)
+  subtotal            Decimal   @default(0) @db.Decimal(12, 2)
+  taxTotal            Decimal   @default(0) @map("tax_total") @db.Decimal(12, 2)
+  total               Decimal   @default(0) @db.Decimal(12, 2)
+  notes               String?
+  paidAt              DateTime? @map("paid_at") @db.Timestamp(0)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+  deletedAt           DateTime? @map("deleted_at") @db.Timestamp(0)
+
+  workshop           Workshop            @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  customer           User?               @relation("SaleCustomer", fields: [customerId], references: [id], onDelete: SetNull)
+  createdBy          User?               @relation("SaleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  items              SaleItem[]
+  electronicInvoices ElectronicInvoice[]
+
+  @@unique([workshopId, referenceCode])
+  @@index([workshopId, createdAt])
+  @@index([customerId])
+  @@map("sales")
+}
+
+model SaleItem {
+  id              BigInt   @id @default(autoincrement())
+  saleId          BigInt   @map("sale_id")
+  inventoryItemId BigInt?  @map("inventory_item_id")
+  codeReference   String   @map("code_reference") @db.VarChar(120)
+  name            String   @db.VarChar(255)
+  quantity        Decimal  @db.Decimal(12, 2)
+  unitPrice       Decimal  @map("unit_price") @db.Decimal(12, 2)
+  discountRate    Decimal  @default(0) @map("discount_rate") @db.Decimal(5, 2)
+  taxRate         Decimal  @default(19) @map("tax_rate") @db.Decimal(5, 2)
+  subtotal        Decimal  @default(0) @db.Decimal(12, 2)
+  taxAmount       Decimal  @default(0) @map("tax_amount") @db.Decimal(12, 2)
+  total           Decimal  @default(0) @db.Decimal(12, 2)
+  unitMeasureCode String   @default("94") @map("unit_measure_code") @db.VarChar(16)
+  standardCode    String   @default("999") @map("standard_code") @db.VarChar(16)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+
+  sale          Sale           @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+
+  @@index([saleId])
+  @@index([inventoryItemId])
+  @@map("sale_items")
+}
+
+model ElectronicInvoice {
+  id                  BigInt    @id @default(autoincrement())
+  workshopId          BigInt    @map("workshop_id")
+  appointmentId       BigInt?   @map("appointment_id")
+  paymentId           BigInt?   @map("payment_id")
+  saleId              BigInt?   @map("sale_id")
+  customerId          BigInt?   @map("customer_id")
+  provider            String    @default("factus") @db.VarChar(32)
+  environment         String    @default("sandbox") @db.VarChar(32)
+  sourceType          String    @map("source_type") @db.VarChar(32)
+  sourceId            String    @map("source_id") @db.VarChar(80)
+  referenceCode       String    @map("reference_code") @db.VarChar(255)
+  customerMode        String    @default("final_consumer") @map("customer_mode") @db.VarChar(32)
+  finalConsumerReason String?   @map("final_consumer_reason") @db.VarChar(64)
+  status              String    @default("draft") @db.VarChar(32)
+  factusNumber        String?   @map("factus_number") @db.VarChar(120)
+  prefix              String?   @db.VarChar(32)
+  cufe                String?   @db.VarChar(255)
+  qr                  String?
+  pdfBase64           String?   @map("pdf_base64")
+  pdfFilename         String?   @map("pdf_filename") @db.VarChar(255)
+  xmlBase64           String?   @map("xml_base64")
+  xmlFilename         String?   @map("xml_filename") @db.VarChar(255)
+  payload             Json?
+  providerResponse    Json?     @map("provider_response")
+  errorMessage        String?   @map("error_message")
+  validatedAt         DateTime? @map("validated_at") @db.Timestamp(0)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  workshop    Workshop     @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  payment     Payment?     @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  sale        Sale?        @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  customer    User?        @relation("ElectronicInvoiceCustomer", fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@unique([workshopId, provider, referenceCode])
+  @@unique([workshopId, sourceType, sourceId])
+  @@index([workshopId, status, createdAt])
+  @@index([appointmentId])
+  @@index([paymentId])
+  @@index([saleId])
+  @@map("electronic_invoices")
+}
+
+// ─── Subscriptions (taller → MotorDesk SaaS billing) ───
+// 1 tier "MotorDesk Completo" × N intervalos. Providers: mercado_pago (auto-recurrente
+// card-on-file con trial) y epayco (link manual por periodo, sin trial). Ver
+// src/lib/billing/ para el engine.
+
+model SubscriptionPlan {
+  id             BigInt   @id @default(autoincrement())
+  code           String   @unique @db.VarChar(64)
+  name           String   @db.VarChar(255)
+  description    String?
+  currency       String   @default("COP") @db.VarChar(3)
+  amount         Decimal  @db.Decimal(12, 2)
+  intervalMonths Int      @map("interval_months")
+  trialDays      Int      @default(0) @map("trial_days")
+  isActive       Boolean  @default(true) @map("is_active")
+  sortOrder      Int      @default(0) @map("sort_order")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  subscriptions Subscription[]
+  invoices      Invoice[]
+
+  @@index([isActive, sortOrder])
+  @@map("subscription_plans")
+}
+
+// One subscription per workshop. status: trialing|active|past_due|suspended|canceled
+// collectionMode: automatic (MP preapproval) | manual (epayco checkout link per period)
+model Subscription {
+  id                 BigInt    @id @default(autoincrement())
+  workshopId         BigInt    @unique @map("workshop_id")
+  planId             BigInt    @map("plan_id")
+  provider           String    @db.VarChar(32)
+  collectionMode     String    @map("collection_mode") @db.VarChar(16)
+  status             String    @default("trialing") @db.VarChar(32)
+  trialEndsAt        DateTime? @map("trial_ends_at") @db.Timestamp(0)
+  currentPeriodStart DateTime? @map("current_period_start") @db.Timestamp(0)
+  currentPeriodEnd   DateTime? @map("current_period_end") @db.Timestamp(0)
+  graceEndsAt        DateTime? @map("grace_ends_at") @db.Timestamp(0)
+  cancelAtPeriodEnd  Boolean   @default(false) @map("cancel_at_period_end")
+  canceledAt         DateTime? @map("canceled_at") @db.Timestamp(0)
+  // Mercado Pago card-on-file recurring (preapproval)
+  mpPreapprovalId    String?   @map("mp_preapproval_id") @db.VarChar(255)
+  mpPayerEmail       String?   @map("mp_payer_email") @db.VarChar(255)
+  cardBrand          String?   @map("card_brand") @db.VarChar(32)
+  cardLast4          String?   @map("card_last4") @db.VarChar(4)
+  lastPaymentAt      DateTime? @map("last_payment_at") @db.Timestamp(0)
+  lastFailureAt      DateTime? @map("last_failure_at") @db.Timestamp(0)
+  metadata           Json?
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  workshop     Workshop             @relation(fields: [workshopId], references: [id])
+  plan         SubscriptionPlan     @relation(fields: [planId], references: [id])
+  invoices     Invoice[]
+  transactions PaymentTransaction[]
+
+  @@index([status])
+  @@index([provider, status])
+  @@index([mpPreapprovalId])
+  @@index([currentPeriodEnd])
+  @@map("subscriptions")
+}
+
+// status: open|paid|past_due|void
+model Invoice {
+  id               BigInt    @id @default(autoincrement())
+  subscriptionId   BigInt    @map("subscription_id")
+  workshopId       BigInt    @map("workshop_id")
+  planId           BigInt    @map("plan_id")
+  reference        String    @unique @db.VarChar(120)
+  status           String    @default("open") @db.VarChar(32)
+  periodStart      DateTime  @map("period_start") @db.Timestamp(0)
+  periodEnd        DateTime  @map("period_end") @db.Timestamp(0)
+  dueAt            DateTime  @map("due_at") @db.Timestamp(0)
+  amount           Decimal   @db.Decimal(12, 2)
+  currency         String    @default("COP") @db.VarChar(3)
+  hostedPaymentUrl String?   @map("hosted_payment_url") @db.Text
+  paidAt           DateTime? @map("paid_at") @db.Timestamp(0)
+  attemptCount     Int       @default(0) @map("attempt_count")
+  nextRetryAt      DateTime? @map("next_retry_at") @db.Timestamp(0)
+  metadata         Json?
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  subscription Subscription         @relation(fields: [subscriptionId], references: [id])
+  workshop     Workshop             @relation(fields: [workshopId], references: [id])
+  plan         SubscriptionPlan     @relation(fields: [planId], references: [id])
+  transactions PaymentTransaction[]
+
+  @@index([subscriptionId, status])
+  @@index([workshopId, status])
+  @@index([status, dueAt])
+  @@map("invoices")
+}
+
+// status: pending|approved|declined|error
+model PaymentTransaction {
+  id             BigInt   @id @default(autoincrement())
+  invoiceId      BigInt?  @map("invoice_id")
+  subscriptionId BigInt   @map("subscription_id")
+  workshopId     BigInt   @map("workshop_id")
+  provider       String   @db.VarChar(32)
+  status         String   @db.VarChar(32)
+  amount         Decimal  @db.Decimal(12, 2)
+  currency       String   @default("COP") @db.VarChar(3)
+  providerTxId   String?  @unique @map("provider_tx_id") @db.VarChar(255)
+  reference      String?  @db.VarChar(120)
+  rawPayload     Json?    @map("raw_payload")
+  errorMessage   String?  @map("error_message")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+
+  invoice      Invoice?     @relation(fields: [invoiceId], references: [id])
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+  workshop     Workshop     @relation(fields: [workshopId], references: [id])
+
+  @@index([invoiceId])
+  @@index([subscriptionId])
+  @@index([status])
+  @@map("payment_transactions")
+}
+
+model WebhookEvent {
+  id               BigInt    @id @default(autoincrement())
+  provider         String    @db.VarChar(32)
+  eventId          String?   @map("event_id") @db.VarChar(255)
+  eventType        String    @map("event_type") @db.VarChar(255)
+  payload          Json
+  processingStatus String    @default("received") @map("processing_status") @db.VarChar(32)
+  processedAt      DateTime? @map("processed_at") @db.Timestamp(0)
+  errorMessage     String?   @map("error_message")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+
+  @@unique([provider, eventId])
+  @@index([provider, eventType])
+  @@index([processingStatus])
+  @@map("webhook_events")
+}
+
+// Pay-first signup: holds the encrypted signup token (workshop + admin form
+// data, incl. password) while the buyer is at the gateway. Nothing in
+// users/workshops is created until the charge confirms; the webhook/poller
+// reads this by `reference` to create + activate the workshop.
+model PendingSignup {
+  id          BigInt    @id @default(autoincrement())
+  reference   String    @unique @db.VarChar(120)
+  email       String    @db.VarChar(255)
+  planCode    String    @map("plan_code") @db.VarChar(64)
+  provider    String    @default("epayco") @db.VarChar(32)
+  amount      Decimal   @db.Decimal(12, 2)
+  currency    String    @default("COP") @db.VarChar(3)
+  token       String    @db.Text
+  status      String    @default("pending") @db.VarChar(32)
+  // MP: preapproval id | epayco: checkout reference — correlates webhook → signup
+  providerRef String?   @map("provider_ref") @db.VarChar(255)
+  workshopId  BigInt?   @map("workshop_id")
+  consumedAt  DateTime? @map("consumed_at") @db.Timestamp(0)
+  expiresAt   DateTime  @map("expires_at") @db.Timestamp(0)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  @@index([status])
+  @@index([expiresAt])
+  @@map("pending_signups")
+}
+
+model AiProviderConfig {
+  id              BigInt    @id @default(autoincrement())
+  provider        String    @db.VarChar(255)
+  model           String    @db.VarChar(255)
+  isActive        Boolean   @default(false) @map("is_active")
+  isDefault       Boolean   @default(false) @map("is_default")
+  apiKey          String?   @map("api_key") @db.VarChar(255)
+  endpoint        String?   @db.VarChar(255)
+  config          Json?
+  maxTokens       Int       @default(800) @map("max_tokens")
+  temperature     Decimal   @default(0.7) @map("temperature") @db.Decimal(3, 2)
+  topP            Decimal   @default(1.0) @map("top_p") @db.Decimal(3, 2)
+  costPer1kTokens Decimal   @default(0) @map("cost_per_1k_tokens") @db.Decimal(8, 6)
+  sortOrder       Int       @default(0) @map("sort_order")
+  lastTestAt      DateTime? @map("last_test_at") @db.Timestamp(0)
+  lastTestStatus  String?   @map("last_test_status") @db.VarChar(255)
+  lastTestLatency Int?      @map("last_test_latency_ms")
+  createdAt       DateTime? @map("created_at") @db.Timestamp(0)
+  updatedAt       DateTime? @map("updated_at") @db.Timestamp(0)
+
+  workshopAiConfigs WorkshopAiConfig[]
+
+  @@map("ai_provider_configs")
+}
+
+model WorkshopAiConfig {
+  id                 BigInt    @id @default(autoincrement())
+  workshopId         BigInt    @map("workshop_id")
+  aiProviderConfigId BigInt    @map("ai_provider_config_id")
+  isActive           Boolean   @default(true) @map("is_active")
+  overrides          Json?
+  createdAt          DateTime? @map("created_at") @db.Timestamp(0)
+  updatedAt          DateTime? @map("updated_at") @db.Timestamp(0)
+
+  workshop         Workshop         @relation(fields: [workshopId], references: [id])
+  aiProviderConfig AiProviderConfig @relation(fields: [aiProviderConfigId], references: [id])
+
+  @@unique([workshopId, aiProviderConfigId])
+  @@map("workshop_ai_configs")
+}
+
+model NotificationLog {
+  id            BigInt    @id @default(autoincrement())
+  workshopId    BigInt?   @map("workshop_id")
+  userId        BigInt?   @map("user_id")
+  appointmentId BigInt?   @map("appointment_id")
+  channel       String    @db.VarChar(255)
+  type          String    @db.VarChar(255)
+  recipient     String    @db.VarChar(255)
+  content       String
+  status        String    @db.VarChar(255)
+  metadata      Json?
+  sentAt        DateTime? @map("sent_at") @db.Timestamp(0)
+  createdAt     DateTime? @map("created_at") @db.Timestamp(0)
+
+  @@map("notifications_log")
+}
+
+model Notification {
+  id            BigInt    @id @default(autoincrement())
+  userId        BigInt    @map("user_id")
+  workshopId    BigInt?   @map("workshop_id")
+  appointmentId BigInt?   @map("appointment_id")
+  category      String    @db.VarChar(64)
+  type          String    @db.VarChar(128)
+  title         String    @db.VarChar(255)
+  body          String
+  actionUrl     String?   @map("action_url") @db.VarChar(500)
+  dedupeKey     String?   @map("dedupe_key") @db.VarChar(255)
+  metadata      Json?
+  readAt        DateTime? @map("read_at") @db.Timestamp(0)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  user        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workshop    Workshop?              @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  appointment Appointment?           @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  deliveries  NotificationDelivery[]
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, readAt, createdAt])
+  @@index([workshopId, category, createdAt])
+  @@index([appointmentId])
+  @@map("notifications")
+}
+
+model NotificationPreference {
+  id         BigInt   @id @default(autoincrement())
+  userId     BigInt   @map("user_id")
+  workshopId BigInt?  @map("workshop_id")
+  category   String   @db.VarChar(64)
+  channel    String   @db.VarChar(32)
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workshop Workshop? @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workshopId, category, channel])
+  @@index([userId, workshopId])
+  @@map("notification_preferences")
+}
+
+model PushSubscription {
+  id         BigInt    @id @default(autoincrement())
+  userId     BigInt    @map("user_id")
+  workshopId BigInt?   @map("workshop_id")
+  endpoint   String    @unique
+  p256dh     String
+  auth       String
+  userAgent  String?   @map("user_agent")
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamp(0)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workshop Workshop? @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([workshopId])
+  @@map("push_subscriptions")
+}
+
+model NotificationDelivery {
+  id             BigInt    @id @default(autoincrement())
+  notificationId BigInt?   @map("notification_id")
+  userId         BigInt    @map("user_id")
+  workshopId     BigInt?   @map("workshop_id")
+  appointmentId  BigInt?   @map("appointment_id")
+  channel        String    @db.VarChar(32)
+  category       String    @db.VarChar(64)
+  type           String    @db.VarChar(128)
+  recipient      String?   @db.VarChar(500)
+  title          String    @db.VarChar(255)
+  body           String
+  actionUrl      String?   @map("action_url") @db.VarChar(500)
+  status         String    @default("pending") @db.VarChar(32)
+  attempts       Int       @default(0)
+  nextAttemptAt  DateTime? @map("next_attempt_at") @db.Timestamp(0)
+  lastError      String?   @map("last_error")
+  metadata       Json?
+  sentAt         DateTime? @map("sent_at") @db.Timestamp(0)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  notification Notification? @relation(fields: [notificationId], references: [id], onDelete: SetNull)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workshop     Workshop?     @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  appointment  Appointment?  @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+
+  @@index([status, nextAttemptAt, createdAt])
+  @@index([userId, channel, status])
+  @@index([workshopId, category])
+  @@index([notificationId])
+  @@map("notification_deliveries")
+}
+
+model ActivityLog {
+  id          BigInt    @id @default(autoincrement())
+  logName     String?   @map("log_name") @db.VarChar(255)
+  description String
+  subjectType String?   @map("subject_type") @db.VarChar(255)
+  event       String?
+  subjectId   BigInt?   @map("subject_id")
+  causerType  String?   @map("causer_type") @db.VarChar(255)
+  causerId    BigInt?   @map("causer_id")
+  properties  Json?
+  batchUuid   String?   @map("batch_uuid") @db.VarChar(255)
+  createdAt   DateTime? @map("created_at") @db.Timestamp(0)
+  updatedAt   DateTime? @map("updated_at") @db.Timestamp(0)
+
+  @@map("activity_log")
+}
+
+model Role {
+  id        BigInt    @id @default(autoincrement())
+  name      String    @db.VarChar(255)
+  guardName String    @map("guard_name") @db.VarChar(255)
+  createdAt DateTime? @map("created_at") @db.Timestamp(0)
+  updatedAt DateTime? @map("updated_at") @db.Timestamp(0)
+
+  permissions RoleHasPermission[]
+  users       ModelHasRole[]
+
+  @@unique([name, guardName])
+  @@map("roles")
+}
+
+model Permission {
+  id        BigInt    @id @default(autoincrement())
+  name      String    @db.VarChar(255)
+  guardName String    @map("guard_name") @db.VarChar(255)
+  createdAt DateTime? @map("created_at") @db.Timestamp(0)
+  updatedAt DateTime? @map("updated_at") @db.Timestamp(0)
+
+  roles RoleHasPermission[]
+
+  @@unique([name, guardName])
+  @@map("permissions")
+}
+
+model ModelHasRole {
+  roleId    BigInt @map("role_id")
+  modelType String @map("model_type") @db.VarChar(255)
+  modelId   BigInt @map("model_id")
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, modelType, modelId])
+  @@map("model_has_roles")
+}
+
+model RoleHasPermission {
+  permissionId BigInt @map("permission_id")
+  roleId       BigInt @map("role_id")
+
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([permissionId, roleId])
+  @@map("role_has_permissions")
+}
+
+// ── Checklist System ────────────────────────────────────────────────────────
+
+model ChecklistTemplate {
+  id          BigInt   @id @default(autoincrement())
+  workshopId  BigInt   @map("workshop_id")
+  serviceId   BigInt?  @map("service_id")
+  name        String
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workshop              Workshop                @relation(fields: [workshopId], references: [id])
+  service               Service?                @relation(fields: [serviceId], references: [id])
+  items                 ChecklistTemplateItem[]
+  appointmentChecklists AppointmentChecklist[]
+
+  @@index([workshopId])
+  @@index([serviceId])
+  @@map("checklist_templates")
+}
+
+model ChecklistTemplateItem {
+  id         BigInt  @id @default(autoincrement())
+  templateId BigInt  @map("template_id")
+  sortOrder  Int     @default(0) @map("sort_order")
+  label      String
+  required   Boolean @default(false)
+
+  template         ChecklistTemplate          @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  appointmentItems AppointmentChecklistItem[]
+
+  @@index([templateId])
+  @@map("checklist_template_items")
+}
+
+model AppointmentChecklist {
+  id            BigInt   @id @default(autoincrement())
+  appointmentId BigInt   @unique @map("appointment_id")
+  templateId    BigInt?  @map("template_id")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  appointment Appointment                @relation(fields: [appointmentId], references: [id])
+  template    ChecklistTemplate?         @relation(fields: [templateId], references: [id])
+  items       AppointmentChecklistItem[]
+
+  @@index([templateId])
+  @@map("appointment_checklists")
+}
+
+model AppointmentChecklistItem {
+  id             BigInt    @id @default(autoincrement())
+  checklistId    BigInt    @map("checklist_id")
+  templateItemId BigInt?   @map("template_item_id")
+  sortOrder      Int       @default(0) @map("sort_order")
+  label          String
+  completed      Boolean   @default(false)
+  completedAt    DateTime? @map("completed_at") @db.Timestamptz(6)
+  completedById  BigInt?   @map("completed_by_id")
+  notes          String?
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  checklist    AppointmentChecklist   @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  templateItem ChecklistTemplateItem? @relation(fields: [templateItemId], references: [id])
+  completedBy  User?                  @relation("ChecklistItemCompletedBy", fields: [completedById], references: [id])
+  photos       AppointmentPhoto[]
+
+  @@index([checklistId])
+  @@index([templateItemId])
+  @@index([completedById])
+  @@map("appointment_checklist_items")
+}
+
+model AppointmentPhoto {
+  id              BigInt   @id @default(autoincrement())
+  appointmentId   BigInt   @map("appointment_id")
+  checklistItemId BigInt?  @map("checklist_item_id")
+  uploadedById    BigInt?  @map("uploaded_by_id")
+  r2Key           String   @map("r2_key")
+  url             String
+  caption         String?
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  appointment   Appointment               @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  checklistItem AppointmentChecklistItem? @relation(fields: [checklistItemId], references: [id])
+  uploadedBy    User?                     @relation("PhotoUploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([appointmentId])
+  @@index([checklistItemId])
+  @@map("appointment_photos")
+}
+
+// ── Vehicle Catalog ─────────────────────────────────────────────────────────
+
+model VehicleModel {
+  id          BigInt   @id @default(autoincrement())
+  type        String
+  brand       String
+  model       String
+  yearFrom    Int      @map("year_from")
+  yearTo      Int?     @map("year_to")
+  engine      String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdById BigInt   @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  createdBy User      @relation("VehicleModelCreator", fields: [createdById], references: [id])
+  vehicles  Vehicle[]
+
+  @@index([type])
+  @@index([brand])
+  @@index([createdById])
+  @@map("vehicle_models")
+}
+
+// Bandeja / chat de leads y talleres (portado de SmartPOS).
+// workshopId null = lead de MotorDesk; con valor = chat de un taller.
+model ChatSession {
+  id         String    @id @default(uuid()) @db.Uuid
+  name       String?   @db.VarChar(120)
+  phone      String?   @db.VarChar(40)
+  workshopId BigInt?   @map("workshop_id")
+  lastAt     DateTime  @default(now()) @map("last_at") @db.Timestamptz(6)
+  seenAt     DateTime? @map("seen_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workshop Workshop?     @relation(fields: [workshopId], references: [id])
+  messages ChatMessage[]
+
+  @@index([lastAt])
+  @@index([workshopId])
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id        BigInt   @id @default(autoincrement())
+  sessionId String   @map("session_id") @db.Uuid
+  sender    String   @db.VarChar(16) // 'visitante' | 'proveedor'
+  text      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, id])
+  @@map("chat_messages")
+}
