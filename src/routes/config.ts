@@ -1,10 +1,10 @@
 import { Hono } from "hono";
 import { prisma } from "../lib/db.js";
-import { requireAuth, requireSuperAdmin } from "../auth/middleware.js";
+import { superadminGuard } from "../auth/middleware.js";
 
 // Configuración global (superadmin): system settings + proveedores de IA.
 export const configRoutes = new Hono();
-configRoutes.use("*", requireAuth, requireSuperAdmin);
+configRoutes.use("*", superadminGuard);
 
 // GET /config — ajustes del sistema.
 configRoutes.get("/", async (c) => {

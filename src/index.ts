@@ -2,7 +2,7 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { requireAuth } from "./auth/middleware.js";
+import { authRoutes } from "./routes/auth.js";
 import { talleresRoutes } from "./routes/talleres.js";
 import { configRoutes } from "./routes/config.js";
 import { manualesRoutes } from "./routes/manuales.js";
@@ -21,16 +21,8 @@ const api = new Hono();
 
 api.get("/health", (c) => c.json({ ok: true, servicio: "motordesk-api" }));
 
-// whoami — valida el token y devuelve el usuario (isSuperAdmin, talleres).
-api.get("/auth/whoami", requireAuth, (c) => {
-  const u = c.get("user");
-  return c.json({
-    id: u.id,
-    email: u.email,
-    isSuperAdmin: u.isSuperAdmin,
-    workshops: u.workshops,
-  });
-});
+// Auth del superadmin (login por credencial + whoami).
+api.route("/auth", authRoutes);
 
 // Control-plane (superadmin).
 api.route("/talleres", talleresRoutes);

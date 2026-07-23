@@ -1,12 +1,12 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { prisma } from "../lib/db.js";
-import { requireAuth, requireSuperAdmin } from "../auth/middleware.js";
+import { superadminGuard } from "../auth/middleware.js";
 import { UUID_RE } from "../lib/chat-notify.js";
 
 // Bandeja del superadmin: todas las conversaciones (leads + talleres).
 export const inboxRoutes = new Hono();
-inboxRoutes.use("*", requireAuth, requireSuperAdmin);
+inboxRoutes.use("*", superadminGuard);
 
 async function noLeidos(sessionId: string, seenAt: Date | null): Promise<number> {
   return prisma.chatMessage.count({

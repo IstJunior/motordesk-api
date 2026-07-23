@@ -1,6 +1,7 @@
 import type { Context, Next } from "hono";
 import { prisma } from "../lib/db.js";
 import { resolverAuthUid } from "../lib/supabase.js";
+import { verificarToken as verificarSuperadminToken } from "../lib/superadmin.js";
 
 // Usuario autenticado resuelto desde el token de Supabase.
 export type AuthUser = {
@@ -59,8 +60,38 @@ export async function requireSuperAdmin(c: Context, next: Next) {
   await next();
 }
 
+// Guard del panel superadmin: acepta el token propio del superadmin (login por
+// credencial, estilo SmartPOS) O un usuario de Supabase con isSuperAdmin.
+export async function superadminGuard(c: Context, next: Next) {
+  const auth = c.req.header("Authorization");
+  if (!auth?.startsWith("Bearer ")) return c.json({ error: "No autenticado" }, 401);
+  const raw = auth.slice(7);
+
+  // 1) Token propio del superadmin.
+  const sa = await verificarSuperadminToken(raw);
+  if (sa) {
+    c.set("superadmin", sa.user);
+    await next();
+    return;
+  }
+
+  // 2) Fallback: usuario Supabase con isSuperAdmin.
+  const authUid = await resolverAuthUid(raw);
+  if (authUid) {
+    const user = await cargarUsuario(authUid);
+    if (user?.isSuperAdmin) {
+      c.set("user", user);
+      c.set("superadmin", user.email);
+      await next();
+      return;
+    }
+  }
+  return c.json({ error: "Sin permiso" }, 403);
+}
+
 declare module "hono" {
   interface ContextVariableMap {
     user: AuthUser;
+    superadmin: string;
   }
 }

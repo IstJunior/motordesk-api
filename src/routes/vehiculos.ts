@@ -1,10 +1,10 @@
 import { Hono } from "hono";
 import { prisma } from "../lib/db.js";
-import { requireAuth, requireSuperAdmin } from "../auth/middleware.js";
+import { superadminGuard } from "../auth/middleware.js";
 
 // Catálogo global de modelos de vehículo (superadmin).
 export const vehiculosRoutes = new Hono();
-vehiculosRoutes.use("*", requireAuth, requireSuperAdmin);
+vehiculosRoutes.use("*", superadminGuard);
 
 vehiculosRoutes.get("/", async (c) => {
   const q = c.req.query("q") ?? "";

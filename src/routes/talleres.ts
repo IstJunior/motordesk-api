@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { prisma } from "../lib/db.js";
-import { requireAuth, requireSuperAdmin } from "../auth/middleware.js";
+import { superadminGuard } from "../auth/middleware.js";
 import { normalizarModulos, MODULOS, esModuloValido } from "../lib/modules.js";
 import {
   openwaHabilitado,
@@ -13,7 +13,7 @@ import {
 } from "../lib/openwa.js";
 
 export const talleresRoutes = new Hono();
-talleresRoutes.use("*", requireAuth, requireSuperAdmin);
+talleresRoutes.use("*", superadminGuard);
 
 const BACKEND_URL = (process.env.BACKEND_URL ?? process.env.PANEL_URL ?? "").replace(/\/+$/, "");
 

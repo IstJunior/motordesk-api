@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { requireAuth, requireSuperAdmin } from "../auth/middleware.js";
+import { superadminGuard } from "../auth/middleware.js";
 import {
   openwaHabilitado,
   estadoSesion,
@@ -11,7 +11,7 @@ import {
 
 // Gateway WhatsApp GLOBAL (sesión de leads `motordesk`). Superadmin.
 export const whatsappRoutes = new Hono();
-whatsappRoutes.use("*", requireAuth, requireSuperAdmin);
+whatsappRoutes.use("*", superadminGuard);
 
 const BACKEND_URL = (process.env.BACKEND_URL ?? process.env.PANEL_URL ?? "").replace(/\/+$/, "");
 const PROVEEDOR_WA = (process.env.PROVEEDOR_WA ?? "").replace(/\D/g, "");
