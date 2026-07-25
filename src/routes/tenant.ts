@@ -46,8 +46,8 @@ tenantRoutes.get("/session", async (c) => {
       };
     }),
   });
-tenantRoutes.route("/services", tenantServicesRoutes);
 });
+tenantRoutes.route("/services", tenantServicesRoutes);
 
 tenantRoutes.get("/context", requireWorkshop, (c) => c.json(c.get("workshop")));
 
