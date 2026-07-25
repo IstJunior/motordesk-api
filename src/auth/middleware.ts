@@ -1,6 +1,6 @@
 import type { Context, Next } from "hono";
 import { prisma } from "../lib/db.js";
-import { resolverAuthClaims, resolverAuthUid } from "../lib/supabase.js";
+import { resolverAuthClaims } from "../lib/supabase.js";
 import { verificarToken as verificarSuperadminToken } from "../lib/superadmin.js";
 
 // Usuario autenticado resuelto desde el token de Supabase.
@@ -83,9 +83,9 @@ export async function superadminGuard(c: Context, next: Next) {
   }
 
   // 2) Fallback: usuario Supabase con isSuperAdmin.
-  const authUid = await resolverAuthUid(raw);
-  if (authUid) {
-    const user = await cargarUsuario(authUid);
+  const claims = await resolverAuthClaims(raw);
+  if (claims) {
+    const user = await cargarUsuario(claims.authUid, claims.email);
     if (user?.isSuperAdmin) {
       c.set("user", user);
       c.set("superadmin", user.email);
