@@ -9,6 +9,7 @@ import {
 import { prisma } from "../lib/db.js";
 import { UUID_RE } from "../lib/chat-notify.js";
 import { enviarTexto, openwaHabilitado, sesionTaller } from "../lib/openwa.js";
+import { tenantServicesRoutes } from "./tenant-services.js";
 import { normalizarModulos } from "../lib/modules.js";
 
 export const tenantRoutes = new Hono();
@@ -45,6 +46,7 @@ tenantRoutes.get("/session", async (c) => {
       };
     }),
   });
+tenantRoutes.route("/services", tenantServicesRoutes);
 });
 
 tenantRoutes.get("/context", requireWorkshop, (c) => c.json(c.get("workshop")));

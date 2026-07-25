@@ -50,5 +50,7 @@ npm run dev        # tsx watch, :3000
   `X-Workshop-Id` cuando el usuario pertenece a más de uno.
 - `GET /api/tenant/inbox`, `/contador`, `/:sid` y `POST /:sid` — bandeja del
   taller aislada por `workshopId`; las respuestas salen por su sesión OpenWA.
+- `GET/POST /api/tenant/services`, `GET/PUT/DELETE /:id` — catálogo de
+  servicios; las mutaciones requieren rol operativo autorizado.
 
 Deploy: Coolify Dockerfile, puerto 3000, `prisma migrate deploy` al arrancar.
