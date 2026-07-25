@@ -9,6 +9,7 @@ import {
 import { prisma } from "../lib/db.js";
 import { UUID_RE } from "../lib/chat-notify.js";
 import { enviarTexto, openwaHabilitado, sesionTaller } from "../lib/openwa.js";
+import { tenantCustomersRoutes } from "./tenant-customers.js";
 import { tenantServicesRoutes } from "./tenant-services.js";
 import { normalizarModulos } from "../lib/modules.js";
 
@@ -48,6 +49,7 @@ tenantRoutes.get("/session", async (c) => {
   });
 });
 tenantRoutes.route("/services", tenantServicesRoutes);
+tenantRoutes.route("/customers", tenantCustomersRoutes);
 
 tenantRoutes.get("/context", requireWorkshop, (c) => c.json(c.get("workshop")));
 

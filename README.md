@@ -58,5 +58,7 @@ npm run dev        # tsx watch, :3000
   taller aislada por `workshopId`; las respuestas salen por su sesión OpenWA.
 - `GET/POST /api/tenant/services`, `GET/PUT/DELETE /:id` — catálogo de
   servicios; las mutaciones requieren rol operativo autorizado.
+- `GET /api/tenant/customers` y `GET /:id` — clientes, vehículos e historial
+  de turnos, siempre filtrados por el taller seleccionado.
 
 Deploy: Coolify Dockerfile, puerto 3000, `prisma migrate deploy` al arrancar.
