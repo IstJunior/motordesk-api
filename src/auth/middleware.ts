@@ -1,6 +1,6 @@
 import type { Context, Next } from "hono";
 import { prisma } from "../lib/db.js";
-import { resolverAuthUid } from "../lib/supabase.js";
+import { resolverAuthClaims, resolverAuthUid } from "../lib/supabase.js";
 import { verificarToken as verificarSuperadminToken } from "../lib/superadmin.js";
 
 // Usuario autenticado resuelto desde el token de Supabase.
@@ -16,12 +16,15 @@ export type AuthUser = {
 // mismo cliente). TTL 30s.
 const cache = new Map<string, { user: AuthUser; exp: number }>();
 
-async function cargarUsuario(authUid: string): Promise<AuthUser | null> {
+async function cargarUsuario(authUid: string, email?: string | null): Promise<AuthUser | null> {
   const hit = cache.get(authUid);
   if (hit && hit.exp > Date.now()) return hit.user;
 
   const dbUser = await prisma.user.findFirst({
-    where: { authId: authUid, deletedAt: null },
+    where: {
+      deletedAt: null,
+      OR: [{ authId: authUid }, ...(email ? [{ email, authId: null }] : [])],
+    },
     select: {
       id: true,
       email: true,
@@ -30,6 +33,10 @@ async function cargarUsuario(authUid: string): Promise<AuthUser | null> {
     },
   });
   if (!dbUser) return null;
+  await prisma.user.updateMany({
+    where: { id: dbUser.id, authId: null },
+    data: { authId: authUid },
+  });
   const user: AuthUser = {
     id: dbUser.id,
     email: dbUser.email,
@@ -44,9 +51,9 @@ async function cargarUsuario(authUid: string): Promise<AuthUser | null> {
 export async function requireAuth(c: Context, next: Next) {
   const auth = c.req.header("Authorization");
   if (!auth?.startsWith("Bearer ")) return c.json({ error: "No autenticado" }, 401);
-  const authUid = await resolverAuthUid(auth.slice(7));
-  if (!authUid) return c.json({ error: "Token inválido o expirado" }, 401);
-  const user = await cargarUsuario(authUid);
+  const claims = await resolverAuthClaims(auth.slice(7));
+  if (!claims) return c.json({ error: "Token inválido o expirado" }, 401);
+  const user = await cargarUsuario(claims.authUid, claims.email);
   if (!user) return c.json({ error: "Usuario no encontrado" }, 401);
   c.set("user", user);
   await next();

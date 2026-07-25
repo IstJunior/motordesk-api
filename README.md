@@ -44,4 +44,11 @@ npm run dev        # tsx watch, :3000
 - `POST /api/chat`, `GET /api/chat/:sid`, `POST /api/chat/webhook` (público, multi-sesión)
 - `GET /api/whatsapp/estado`, `POST /api/whatsapp/conectar` (gateway global leads)
 
+## Rutas (Fase 3 — tenant, primer bloque)
+- `GET /api/tenant/session` — usuario y talleres disponibles (Supabase Bearer).
+- `GET /api/tenant/context` — contexto del taller seleccionado; usa
+  `X-Workshop-Id` cuando el usuario pertenece a más de uno.
+- `GET /api/tenant/inbox`, `/contador`, `/:sid` y `POST /:sid` — bandeja del
+  taller aislada por `workshopId`; las respuestas salen por su sesión OpenWA.
+
 Deploy: Coolify Dockerfile, puerto 3000, `prisma migrate deploy` al arrancar.
