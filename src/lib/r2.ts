@@ -1,4 +1,10 @@
-import { ListObjectsV2Command, S3Client, type S3ClientConfig } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+  type S3ClientConfig,
+} from "@aws-sdk/client-s3";
 
 export interface R2Object {
   key: string;
@@ -59,4 +65,24 @@ export async function listR2Objects(prefix: string): Promise<R2Object[]> {
   } while (continuationToken);
 
   return objects;
+}
+
+export async function uploadR2Object(key: string, body: Buffer, contentType: string): Promise<string> {
+  if (!r2Configured()) throw new Error("R2 no está configurado");
+  await getClient().send(
+    new PutObjectCommand({
+      Bucket: required("R2_BUCKET_NAME"),
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    }),
+  );
+  return key;
+}
+
+export async function deleteR2Object(key: string): Promise<void> {
+  if (!r2Configured()) throw new Error("R2 no está configurado");
+  await getClient().send(
+    new DeleteObjectCommand({ Bucket: required("R2_BUCKET_NAME"), Key: key }),
+  );
 }
