@@ -22,9 +22,9 @@ import {
 } from "../lib/billing.js";
 import {
   ROLES_TALLER,
+  actualizarUsuario,
   agregarUsuario,
   cambiarPassword,
-  cambiarRol,
   listarUsuarios,
   quitarUsuario,
   supabaseAdminDisponible,
@@ -214,16 +214,22 @@ talleresRoutes.post("/:id/users", async (c) => {
 });
 
 
-// PATCH /talleres/:id/users/:uid — { role }
+// PATCH /talleres/:id/users/:uid — { nombre?, email?, role?, isOwner? }
+const editarUsuarioSchema = z.object({
+  nombre: z.string().trim().max(255).optional(),
+  email: z.string().trim().email().optional(),
+  role: z.string().min(1).optional(),
+  isOwner: z.boolean().optional(),
+});
 talleresRoutes.patch("/:id/users/:uid", async (c) => {
   const id = BigInt(c.req.param("id"));
   const uid = BigInt(c.req.param("uid"));
-  const parsed = z.object({ role: z.string().min(1) }).safeParse(await c.req.json().catch(() => null));
+  const parsed = editarUsuarioSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "Datos inválidos" }, 400);
   try {
-    await cambiarRol(id, uid, parsed.data.role);
+    await actualizarUsuario(id, uid, parsed.data);
   } catch (e) {
-    return c.json({ error: e instanceof Error ? e.message : "No se pudo cambiar el rol" }, 400);
+    return c.json({ error: e instanceof Error ? e.message : "No se pudo actualizar el usuario" }, 400);
   }
   return c.json(await listarUsuarios(id));
 });

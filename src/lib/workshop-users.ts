@@ -4,7 +4,11 @@
 // registro queda enlazado por correo y la persona la define al entrar.
 
 import { prisma } from "./db.js";
-import { crearOActualizarAuthUser, supabaseAdminDisponible } from "./supabase-admin.js";
+import {
+  actualizarEmailAuth,
+  crearOActualizarAuthUser,
+  supabaseAdminDisponible,
+} from "./supabase-admin.js";
 
 export { supabaseAdminDisponible };
 
@@ -138,18 +142,71 @@ export async function agregarUsuario(
   };
 }
 
-export async function cambiarRol(workshopId: bigint, membresiaId: bigint, role: string) {
-  if (!esRolValido(role)) throw new Error("Rol inválido.");
+// Edición completa de un miembro: nombre, correo, rol y dueño del taller.
+export async function actualizarUsuario(
+  workshopId: bigint,
+  membresiaId: bigint,
+  cambios: { nombre?: string; email?: string; role?: string; isOwner?: boolean },
+) {
   const membresia = await prisma.workshopUser.findFirst({
     where: { id: membresiaId, workshopId },
-    select: { id: true, userId: true, isOwner: true },
+    select: { id: true, userId: true, isOwner: true, user: { select: { email: true, name: true, isSuperAdmin: true } } },
   });
   if (!membresia) throw new Error("Usuario no pertenece al taller.");
-  await prisma.workshopUser.update({
-    where: { id: membresia.id },
-    data: { role, updatedAt: new Date() },
-  });
-  await sincronizarRolSpatie(membresia.userId, role);
+  if (membresia.user.isSuperAdmin) throw new Error("No puedes editar a un superadmin desde un taller.");
+
+  const nombre = cambios.nombre?.trim();
+  const email = cambios.email?.trim().toLowerCase();
+  if (email && !EMAIL_RE.test(email)) throw new Error("Correo inválido.");
+  if (email && email !== membresia.user.email) {
+    const ocupado = await prisma.user.findFirst({
+      where: { email, id: { not: membresia.userId } },
+      select: { id: true },
+    });
+    if (ocupado) throw new Error("Ese correo ya pertenece a otra cuenta.");
+  }
+
+  if (nombre || email) {
+    await prisma.user.update({
+      where: { id: membresia.userId },
+      data: {
+        ...(nombre ? { name: nombre } : {}),
+        ...(email ? { email } : {}),
+        updatedAt: new Date(),
+      },
+    });
+    // El correo es la credencial de acceso: se cambia también en Supabase.
+    if (email && email !== membresia.user.email && supabaseAdminDisponible()) {
+      await actualizarEmailAuth(membresia.user.email, email, nombre ?? membresia.user.name);
+    }
+  }
+
+  if (cambios.role !== undefined) {
+    if (!esRolValido(cambios.role)) throw new Error("Rol inválido.");
+    await prisma.workshopUser.update({
+      where: { id: membresia.id },
+      data: { role: cambios.role, updatedAt: new Date() },
+    });
+    await sincronizarRolSpatie(membresia.userId, cambios.role);
+  }
+
+  if (cambios.isOwner !== undefined && cambios.isOwner !== membresia.isOwner) {
+    // Un solo dueño por taller: marcar a alguien traspasa la propiedad.
+    if (cambios.isOwner) {
+      await prisma.workshopUser.updateMany({
+        where: { workshopId, isOwner: true },
+        data: { isOwner: false, updatedAt: new Date() },
+      });
+    }
+    await prisma.workshopUser.update({
+      where: { id: membresia.id },
+      data: { isOwner: cambios.isOwner, updatedAt: new Date() },
+    });
+  }
+}
+
+export async function cambiarRol(workshopId: bigint, membresiaId: bigint, role: string) {
+  await actualizarUsuario(workshopId, membresiaId, { role });
 }
 
 // Cambia (o crea) la contraseña de acceso de un usuario del taller, incluido el
@@ -176,12 +233,13 @@ export async function cambiarPassword(workshopId: bigint, membresiaId: bigint, p
   });
 }
 
+// Quita la membresía (la cuenta global sigue existiendo). El dueño también se
+// puede quitar: el taller queda sin dueño hasta que asignes otro.
 export async function quitarUsuario(workshopId: bigint, membresiaId: bigint) {
   const membresia = await prisma.workshopUser.findFirst({
     where: { id: membresiaId, workshopId },
-    select: { id: true, isOwner: true },
+    select: { id: true },
   });
   if (!membresia) throw new Error("Usuario no pertenece al taller.");
-  if (membresia.isOwner) throw new Error("No puedes quitar al dueño del taller.");
   await prisma.workshopUser.delete({ where: { id: membresia.id } });
 }

@@ -83,3 +83,22 @@ export async function crearOActualizarAuthUser(input: {
   });
   return data.id;
 }
+
+// Cambia el correo de acceso. Si la cuenta aún no existe en Supabase no hay
+// nada que mover: se creará con el correo nuevo al asignarle contraseña.
+export async function actualizarEmailAuth(
+  emailActual: string,
+  emailNuevo: string,
+  nombre: string,
+): Promise<void> {
+  const uid = await buscarAuthUserPorEmail(emailActual);
+  if (!uid) return;
+  await admin(`/admin/users/${uid}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      email: emailNuevo,
+      email_confirm: true,
+      user_metadata: { name: nombre },
+    }),
+  });
+}
