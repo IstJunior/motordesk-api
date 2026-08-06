@@ -26,6 +26,7 @@ import {
   cambiarRol,
   listarUsuarios,
   quitarUsuario,
+  supabaseAdminDisponible,
 } from "../lib/workshop-users.js";
 
 export const talleresRoutes = new Hono();
@@ -59,6 +60,8 @@ talleresRoutes.get("/meta/modules", (c) =>
 );
 talleresRoutes.get("/meta/planes", async (c) => c.json(await listarPlanes()));
 talleresRoutes.get("/meta/roles", (c) => c.json({ roles: ROLES_TALLER }));
+// Indica si la API puede crear cuentas de acceso (service role de Supabase).
+talleresRoutes.get("/meta/acceso", (c) => c.json({ puedeCrearAcceso: supabaseAdminDisponible() }));
 
 // GET /talleres/:id — detalle (tipo DetalleComercio): módulos, suscripción, estado,
 // usuarios, whatsapp.
@@ -190,23 +193,25 @@ talleresRoutes.get("/:id/users", async (c) => {
   return c.json(await listarUsuarios(id));
 });
 
-// POST /talleres/:id/users — { nombre, email, role }
+// POST /talleres/:id/users — { nombre, email, role, password? }
 const nuevoUsuarioSchema = z.object({
   nombre: z.string().trim().max(255).default(""),
   email: z.string().trim().email(),
   role: z.string().min(1),
+  password: z.string().trim().max(128).optional(),
 });
 talleresRoutes.post("/:id/users", async (c) => {
   const id = BigInt(c.req.param("id"));
   const parsed = nuevoUsuarioSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "Datos inválidos" }, 400);
   try {
-    await agregarUsuario(id, parsed.data);
+    const resultado = await agregarUsuario(id, parsed.data);
+    return c.json({ ...resultado, usuarios: await listarUsuarios(id) }, 201);
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : "No se pudo agregar el usuario" }, 400);
   }
-  return c.json(await listarUsuarios(id), 201);
 });
+
 
 // PATCH /talleres/:id/users/:uid — { role }
 talleresRoutes.patch("/:id/users/:uid", async (c) => {

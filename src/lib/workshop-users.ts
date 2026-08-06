@@ -1,8 +1,12 @@
 // Usuarios del taller (staff). Mismo modelo que el monolito: `users` global +
-// membresía en `workshop_user` con rol. La contraseña queda vacía: el acceso
-// real se hace con Supabase Auth y se enlaza por email en el primer login.
+// membresía en `workshop_user` con rol. El acceso se hace con Supabase Auth:
+// si el proveedor define una contraseña se crea la cuenta ahí mismo; si no, el
+// registro queda enlazado por correo y la persona la define al entrar.
 
 import { prisma } from "./db.js";
+import { crearOActualizarAuthUser, supabaseAdminDisponible } from "./supabase-admin.js";
+
+export { supabaseAdminDisponible };
 
 export const ROLES_TALLER = [
   { value: "workshop_admin", label: "Administrador" },
@@ -56,29 +60,62 @@ export function listarUsuarios(workshopId: bigint) {
   });
 }
 
+export type ResultadoAlta = {
+  // creado: cuenta nueva · agregado: la cuenta existía y entra al taller
+  // actualizado: ya pertenecía al taller (se ajusta el rol / la contraseña)
+  estado: "creado" | "agregado" | "actualizado";
+  accesoCreado: boolean;
+};
+
 export async function agregarUsuario(
   workshopId: bigint,
-  datos: { nombre: string; email: string; role: string },
-) {
+  datos: { nombre: string; email: string; role: string; password?: string },
+): Promise<ResultadoAlta> {
   const email = datos.email.trim().toLowerCase();
   if (!EMAIL_RE.test(email)) throw new Error("Correo inválido.");
   if (!esRolValido(datos.role)) throw new Error("Rol inválido.");
+  const password = datos.password?.trim() || "";
+  if (password && password.length < 8) {
+    throw new Error("La contraseña debe tener al menos 8 caracteres.");
+  }
 
   let user = await prisma.user.findUnique({ where: { email } });
   if (user?.isSuperAdmin) throw new Error("No puedes asignar un superadmin a un taller.");
+
+  const yaExistia = Boolean(user);
+  const nombre = datos.nombre.trim() || user?.name || email;
+
   if (!user) {
     const now = new Date();
     user = await prisma.user.create({
-      data: {
-        name: datos.nombre.trim() || email,
-        email,
-        password: "",
-        createdAt: now,
-        updatedAt: now,
-      },
+      data: { name: nombre, email, password: "", createdAt: now, updatedAt: now },
     });
   } else if (user.deletedAt) {
     user = await prisma.user.update({ where: { id: user.id }, data: { deletedAt: null } });
+  }
+
+  const membresia = await prisma.workshopUser.findUnique({
+    where: { userId_workshopId: { userId: user.id, workshopId } },
+    select: { id: true },
+  });
+
+  // La contraseña vive en Supabase Auth, no en la tabla `users`.
+  let accesoCreado = false;
+  if (password) {
+    try {
+      const authUid = await crearOActualizarAuthUser({ email, password, name: nombre });
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { authId: authUid, emailVerifiedAt: new Date(), name: nombre },
+      });
+      accesoCreado = true;
+    } catch (e) {
+      // Si la cuenta es nueva y no se pudo crear el acceso, no dejar el registro a medias.
+      if (!yaExistia && !membresia) {
+        await prisma.user.delete({ where: { id: user.id } }).catch(() => {});
+      }
+      throw e;
+    }
   }
 
   await prisma.workshopUser.upsert({
@@ -94,7 +131,11 @@ export async function agregarUsuario(
     update: { role: datos.role, updatedAt: new Date() },
   });
   await sincronizarRolSpatie(user.id, datos.role);
-  return user;
+
+  return {
+    estado: membresia ? "actualizado" : yaExistia ? "agregado" : "creado",
+    accesoCreado,
+  };
 }
 
 export async function cambiarRol(workshopId: bigint, membresiaId: bigint, role: string) {
