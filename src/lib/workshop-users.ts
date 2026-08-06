@@ -18,23 +18,29 @@ export function esRolValido(role: string): boolean {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// El monolito (Laravel/Spatie) lee `roles`/`model_has_roles` para permisos:
-// se mantiene sincronizado mientras ambos convivan.
+// El monolito (Laravel/Spatie) lee `roles`/`model_has_roles` para permisos: se
+// mantiene sincronizado mientras ambos convivan. La fuente de verdad del rol es
+// `workshop_user`, así que un fallo aquí se registra pero no tumba el alta.
 async function sincronizarRolSpatie(userId: bigint, role: string) {
-  await prisma.$executeRawUnsafe(
-    `INSERT INTO roles (name, guard_name) VALUES ($1, 'web') ON CONFLICT DO NOTHING`,
-    role,
-  );
-  const filas = await prisma.$queryRawUnsafe<{ id: bigint | number }[]>(
-    `SELECT id FROM roles WHERE name = $1`,
-    role,
-  );
-  if (filas.length === 0) return;
-  await prisma.$executeRawUnsafe(
-    `INSERT INTO model_has_roles (role_id, model_type, model_id) VALUES ($1, 'App\\Models\\User', $2) ON CONFLICT DO NOTHING`,
-    filas[0].id,
-    String(userId),
-  );
+  try {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO roles (name, guard_name) VALUES ($1, 'web') ON CONFLICT DO NOTHING`,
+      role,
+    );
+    const filas = await prisma.$queryRawUnsafe<{ id: bigint | number }[]>(
+      `SELECT id FROM roles WHERE name = $1`,
+      role,
+    );
+    if (filas.length === 0) return;
+    // model_id y role_id son bigint: se pasan como BigInt, no como texto.
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO model_has_roles (role_id, model_type, model_id) VALUES ($1, 'App\\Models\\User', $2) ON CONFLICT DO NOTHING`,
+      BigInt(filas[0].id),
+      userId,
+    );
+  } catch (e) {
+    console.error("[usuarios] No se pudo sincronizar el rol Spatie:", e instanceof Error ? e.message : e);
+  }
 }
 
 export function listarUsuarios(workshopId: bigint) {
