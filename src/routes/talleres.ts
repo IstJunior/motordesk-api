@@ -2,7 +2,8 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { prisma } from "../lib/db.js";
 import { superadminGuard } from "../auth/middleware.js";
-import { normalizarModulos, MODULOS, esModuloValido } from "../lib/modules.js";
+import { normalizarModulos, MODULOS, ETIQUETA_MODULO, esModuloValido } from "../lib/modules.js";
+import { encryptJson } from "../lib/crypto.js";
 import {
   openwaHabilitado,
   estadoSesion,
@@ -53,7 +54,9 @@ talleresRoutes.get("/", async (c) => {
 });
 
 // Catálogos (antes que `/:id` para que no los capture el parámetro).
-talleresRoutes.get("/meta/modules", (c) => c.json({ modules: MODULOS }));
+talleresRoutes.get("/meta/modules", (c) =>
+  c.json({ modules: MODULOS.map((m) => ({ value: m, label: ETIQUETA_MODULO[m] })) }),
+);
 talleresRoutes.get("/meta/planes", async (c) => c.json(await listarPlanes()));
 talleresRoutes.get("/meta/roles", (c) => c.json({ roles: ROLES_TALLER }));
 
@@ -103,7 +106,7 @@ talleresRoutes.get("/:id", async (c) => {
   return c.json({ ...w, modules: normalizarModulos(w.enabledModules) });
 });
 
-// PUT /talleres/:id/modules — { modules: { turnos: true, ... } }
+// PUT /talleres/:id/modules — { modules: { inventario: true, ... } }
 const modulesSchema = z.object({ modules: z.record(z.boolean()) });
 talleresRoutes.put("/:id/modules", async (c) => {
   const id = BigInt(c.req.param("id"));
@@ -116,7 +119,14 @@ talleresRoutes.put("/:id/modules", async (c) => {
     data: { enabledModules: limpio },
     select: { enabledModules: true },
   });
-  return c.json({ modules: normalizarModulos(w.enabledModules) });
+  const modules = normalizarModulos(w.enabledModules);
+  // La página de facturación del taller lee `enabled` de su config DIAN: se
+  // mantiene alineada con el flag del módulo para que ambos digan lo mismo.
+  await prisma.workshopDianConfig.updateMany({
+    where: { workshopId: id },
+    data: { enabled: modules.facturacion_electronica },
+  });
+  return c.json({ modules });
 });
 
 // PUT /talleres/:id/status — { isActive: bool }  (activar/suspender)
@@ -261,6 +271,156 @@ talleresRoutes.post("/:id/whatsapp/connect", async (c) => {
     data: { whatsappSession: session, whatsappStatus: est.status },
   });
   return c.json({ session, status: est.status, qr: est.qr });
+});
+
+// GET /talleres/:id/dian — datos de facturación electrónica del taller.
+// La clave técnica nunca se devuelve, solo si existe.
+talleresRoutes.get("/:id/dian", async (c) => {
+  const id = BigInt(c.req.param("id"));
+  const cfg = await prisma.workshopDianConfig.findUnique({ where: { workshopId: id } });
+  if (!cfg) {
+    return c.json({
+      environment: "habilitacion",
+      personType: "juridica",
+      documentType: "31",
+      documentNumber: "",
+      dv: "",
+      legalName: "",
+      address: "",
+      city: "",
+      municipalityCode: "",
+      department: "",
+      email: "",
+      phone: "",
+      taxRegime: "",
+      responsibilities: "",
+      softwareId: "",
+      resolutionPrefix: "",
+      resolutionNumber: "",
+      rangeFrom: null,
+      rangeTo: null,
+      nextInvoiceNumber: null,
+      tieneClaveTecnica: false,
+    });
+  }
+  const { technicalKeyEncrypted, ...resto } = cfg;
+  return c.json({ ...resto, tieneClaveTecnica: Boolean(technicalKeyEncrypted) });
+});
+
+// PUT /talleres/:id/dian — guarda emisor, resolución y software.
+const textoOpcional = z.string().trim().max(255).optional().nullable();
+const dianSchema = z.object({
+  environment: z.enum(["habilitacion", "produccion"]).default("habilitacion"),
+  personType: z.enum(["natural", "juridica"]).default("juridica"),
+  documentType: z.string().trim().max(16).default("31"),
+  documentNumber: textoOpcional,
+  dv: z.string().trim().max(2).optional().nullable(),
+  legalName: textoOpcional,
+  address: textoOpcional,
+  city: textoOpcional,
+  municipalityCode: z.string().trim().max(16).optional().nullable(),
+  department: textoOpcional,
+  email: textoOpcional,
+  phone: z.string().trim().max(80).optional().nullable(),
+  taxRegime: textoOpcional,
+  responsibilities: textoOpcional,
+  softwareId: textoOpcional,
+  resolutionPrefix: z.string().trim().max(32).optional().nullable(),
+  resolutionNumber: z.string().trim().max(120).optional().nullable(),
+  // Solo se guarda si viene con contenido; vacío = conservar la actual.
+  technicalKey: z.string().trim().optional().nullable(),
+  rangeFrom: z.number().int().positive().optional().nullable(),
+  rangeTo: z.number().int().positive().optional().nullable(),
+});
+
+function limpiar(v: string | null | undefined): string | null {
+  const s = (v ?? "").trim();
+  return s.length > 0 ? s : null;
+}
+
+talleresRoutes.put("/:id/dian", async (c) => {
+  const id = BigInt(c.req.param("id"));
+  const parsed = dianSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "Datos inválidos" }, 400);
+  const d = parsed.data;
+
+  const rangeFrom = d.rangeFrom ?? null;
+  const rangeTo = d.rangeTo ?? null;
+  if (rangeFrom !== null && rangeTo !== null && rangeTo < rangeFrom) {
+    return c.json({ error: "El rango hasta no puede ser menor que el rango desde." }, 400);
+  }
+
+  const workshop = await prisma.workshop.findFirst({
+    where: { id, deletedAt: null },
+    select: { enabledModules: true },
+  });
+  if (!workshop) return c.json({ error: "Taller no encontrado" }, 404);
+  const enabled = normalizarModulos(workshop.enabledModules).facturacion_electronica;
+
+  const current = await prisma.workshopDianConfig.findUnique({ where: { workshopId: id } });
+  const resolutionPrefix = limpiar(d.resolutionPrefix);
+
+  // La numeración nunca retrocede: con prefijo nuevo arranca en el rango
+  // declarado; con el mismo prefijo continúa tras el último documento emitido.
+  const lastDocument = await prisma.dianElectronicDocument.findFirst({
+    where: { workshopId: id, prefix: resolutionPrefix },
+    orderBy: { number: "desc" },
+    select: { number: true },
+  });
+  const nextInvoiceNumber =
+    rangeFrom === null
+      ? current?.nextInvoiceNumber ?? null
+      : Math.max(
+          rangeFrom,
+          current?.resolutionPrefix === resolutionPrefix ? current?.nextInvoiceNumber ?? 0 : 0,
+          (lastDocument?.number ?? 0) + 1,
+        );
+
+  const claveTecnica = limpiar(d.technicalKey);
+  const datos = {
+    enabled,
+    environment: d.environment,
+    personType: d.personType,
+    documentType: limpiar(d.documentType) ?? "31",
+    documentNumber: limpiar(d.documentNumber),
+    dv: limpiar(d.dv),
+    legalName: limpiar(d.legalName),
+    address: limpiar(d.address),
+    city: limpiar(d.city),
+    municipalityCode: limpiar(d.municipalityCode),
+    department: limpiar(d.department),
+    email: limpiar(d.email),
+    phone: limpiar(d.phone),
+    taxRegime: limpiar(d.taxRegime),
+    responsibilities: limpiar(d.responsibilities),
+    softwareId: limpiar(d.softwareId),
+    resolutionPrefix,
+    resolutionNumber: limpiar(d.resolutionNumber),
+    rangeFrom,
+    rangeTo,
+    nextInvoiceNumber,
+  };
+
+  try {
+    await prisma.workshopDianConfig.upsert({
+      where: { workshopId: id },
+      create: {
+        workshopId: id,
+        ...datos,
+        technicalKeyEncrypted: claveTecnica ? encryptJson({ value: claveTecnica }) : null,
+      },
+      update: {
+        ...datos,
+        ...(claveTecnica ? { technicalKeyEncrypted: encryptJson({ value: claveTecnica }) } : {}),
+      },
+    });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : "No se pudo guardar la configuración DIAN" }, 400);
+  }
+
+  const cfg = await prisma.workshopDianConfig.findUnique({ where: { workshopId: id } });
+  const { technicalKeyEncrypted, ...resto } = cfg!;
+  return c.json({ ...resto, tieneClaveTecnica: Boolean(technicalKeyEncrypted) });
 });
 
 // POST /talleres/:id/backups — placeholder (módulo sin implementar).

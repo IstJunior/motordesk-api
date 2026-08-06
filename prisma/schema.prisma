@@ -48,10 +48,8 @@ model User {
   pushSubscriptions         PushSubscription[]
   notificationDeliveries    NotificationDelivery[]
   inventoryMovementsCreated InventoryMovement[]        @relation("InventoryMovementCreatedBy")
-  customerBillingProfile    CustomerBillingProfile?
   sales                     Sale[]                     @relation("SaleCustomer")
   salesCreated              Sale[]                     @relation("SaleCreatedBy")
-  electronicInvoices        ElectronicInvoice[]        @relation("ElectronicInvoiceCustomer")
 
   @@map("users")
 }
@@ -73,9 +71,9 @@ model Workshop {
   vehicleTypes       Json?     @map("vehicle_types")
   workshopType       String    @default("mixed_vehicle") @map("workshop_type") @db.VarChar(64)
   landingConfig      Json?     @map("landing_config")
-  // Sistema de módulos por taller (superadmin activa/desactiva). Flags {modulo: bool}.
+  // Flags de módulos por taller administrados desde el panel global.
   enabledModules     Json?     @map("enabled_modules")
-  // WhatsApp propio del taller (sesión en el gateway openwa; clientes → bandeja del taller).
+  // Identidad y estado de la sesión WhatsApp propia del taller.
   whatsappSession    String?   @map("whatsapp_session") @db.VarChar(64)
   whatsappStatus     String?   @map("whatsapp_status") @db.VarChar(32)
   isActive           Boolean   @default(true) @map("is_active")
@@ -108,10 +106,9 @@ model Workshop {
   paymentGatewayConfigs        WorkshopPaymentGatewayConfig[]
   paymentRequests              PaymentRequest[]
   workshopPaymentWebhookEvents WorkshopPaymentWebhookEvent[]
-  fiscalProfile                WorkshopFiscalProfile?
-  factusConfig                 WorkshopFactusConfig?
   sales                        Sale[]
-  electronicInvoices           ElectronicInvoice[]
+  dianConfig                   WorkshopDianConfig?
+  dianDocuments                DianElectronicDocument[]
   chatSessions                 ChatSession[]
 
   @@index([isActive])
@@ -312,7 +309,6 @@ model Appointment {
   photos                 AppointmentPhoto[]
   notifications          Notification[]
   notificationDeliveries NotificationDelivery[]
-  electronicInvoices     ElectronicInvoice[]
 
   @@index([scheduledAt])
   @@index([status])
@@ -379,12 +375,11 @@ model Payment {
   createdAt            DateTime? @map("created_at") @db.Timestamp(0)
   updatedAt            DateTime? @map("updated_at") @db.Timestamp(0)
 
-  workshop           Workshop            @relation(fields: [workshopId], references: [id])
-  appointment        Appointment         @relation(fields: [appointmentId], references: [id], map: "payment_appointment_fk")
-  user               User                @relation(fields: [userId], references: [id])
-  paymentRequest     PaymentRequest?     @relation(fields: [paymentRequestId], references: [id])
-  createdBy          User?               @relation("PaymentCreatedBy", fields: [createdById], references: [id])
-  electronicInvoices ElectronicInvoice[]
+  workshop       Workshop        @relation(fields: [workshopId], references: [id])
+  appointment    Appointment     @relation(fields: [appointmentId], references: [id], map: "payment_appointment_fk")
+  user           User            @relation(fields: [userId], references: [id])
+  paymentRequest PaymentRequest? @relation(fields: [paymentRequestId], references: [id])
+  createdBy      User?           @relation("PaymentCreatedBy", fields: [createdById], references: [id])
 
   @@index([paymentRequestId])
   @@index([createdById])
@@ -586,80 +581,6 @@ model SystemSetting {
   @@map("system_settings")
 }
 
-model WorkshopFiscalProfile {
-  id                  BigInt   @id @default(autoincrement())
-  workshopId          BigInt   @unique @map("workshop_id")
-  personType          String   @default("natural") @map("person_type") @db.VarChar(32)
-  documentType        String?  @map("document_type") @db.VarChar(32)
-  documentNumber      String?  @map("document_number") @db.VarChar(64)
-  dv                  String?  @db.VarChar(2)
-  legalName           String?  @map("legal_name") @db.VarChar(255)
-  tradeName           String?  @map("trade_name") @db.VarChar(255)
-  address             String?  @db.VarChar(255)
-  city                String?  @db.VarChar(120)
-  municipalityCode    String?  @map("municipality_code") @db.VarChar(16)
-  email               String?  @db.VarChar(255)
-  phone               String?  @db.VarChar(80)
-  taxRegime           String?  @map("tax_regime") @db.VarChar(80)
-  taxResponsibilities Json?    @map("tax_responsibilities")
-  status              String   @default("incomplete") @db.VarChar(32)
-  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamp(0)
-  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
-
-  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
-
-  @@index([status])
-  @@map("workshop_fiscal_profiles")
-}
-
-model WorkshopFactusConfig {
-  id                       BigInt    @id @default(autoincrement())
-  workshopId               BigInt    @unique @map("workshop_id")
-  environment              String    @default("sandbox") @db.VarChar(32)
-  enabled                  Boolean   @default(false)
-  baseUrl                  String?   @map("base_url") @db.VarChar(255)
-  credentialsEncrypted     String?   @map("credentials_encrypted")
-  companyData              Json?     @map("company_data")
-  numberingRanges          Json?     @map("numbering_ranges")
-  activeNumberingRangeId   Int?      @map("active_numbering_range_id")
-  activeNumberingRangeData Json?     @map("active_numbering_range_data")
-  status                   String    @default("disabled") @db.VarChar(32)
-  lastTestAt               DateTime? @map("last_test_at") @db.Timestamp(0)
-  lastError                String?   @map("last_error")
-  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
-  updatedAt                DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
-
-  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
-
-  @@index([status])
-  @@index([environment, enabled])
-  @@map("workshop_factus_configs")
-}
-
-model CustomerBillingProfile {
-  id                         BigInt   @id @default(autoincrement())
-  userId                     BigInt   @unique @map("user_id")
-  personType                 String   @default("natural") @map("person_type") @db.VarChar(32)
-  identificationDocumentCode String?  @map("identification_document_code") @db.VarChar(16)
-  identification             String?  @db.VarChar(64)
-  dv                         String?  @db.VarChar(2)
-  legalOrganizationCode      String   @default("2") @map("legal_organization_code") @db.VarChar(8)
-  tributeCode                String   @default("ZZ") @map("tribute_code") @db.VarChar(8)
-  company                    String?  @db.VarChar(255)
-  tradeName                  String?  @map("trade_name") @db.VarChar(255)
-  names                      String?  @db.VarChar(255)
-  address                    String?  @db.VarChar(255)
-  email                      String?  @db.VarChar(255)
-  phone                      String?  @db.VarChar(80)
-  municipalityCode           String?  @map("municipality_code") @db.VarChar(16)
-  createdAt                  DateTime @default(now()) @map("created_at") @db.Timestamp(0)
-  updatedAt                  DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("customer_billing_profiles")
-}
-
 model Sale {
   id                  BigInt    @id @default(autoincrement())
   workshopId          BigInt    @map("workshop_id")
@@ -680,11 +601,11 @@ model Sale {
   updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
   deletedAt           DateTime? @map("deleted_at") @db.Timestamp(0)
 
-  workshop           Workshop            @relation(fields: [workshopId], references: [id], onDelete: Cascade)
-  customer           User?               @relation("SaleCustomer", fields: [customerId], references: [id], onDelete: SetNull)
-  createdBy          User?               @relation("SaleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  items              SaleItem[]
-  electronicInvoices ElectronicInvoice[]
+  workshop  Workshop   @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  customer  User?      @relation("SaleCustomer", fields: [customerId], references: [id], onDelete: SetNull)
+  createdBy User?      @relation("SaleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  items     SaleItem[]
+  dianDocument DianElectronicDocument?
 
   @@unique([workshopId, referenceCode])
   @@index([workshopId, createdAt])
@@ -717,49 +638,66 @@ model SaleItem {
   @@map("sale_items")
 }
 
-model ElectronicInvoice {
-  id                  BigInt    @id @default(autoincrement())
-  workshopId          BigInt    @map("workshop_id")
-  appointmentId       BigInt?   @map("appointment_id")
-  paymentId           BigInt?   @map("payment_id")
-  saleId              BigInt?   @map("sale_id")
-  customerId          BigInt?   @map("customer_id")
-  provider            String    @default("factus") @db.VarChar(32)
-  environment         String    @default("sandbox") @db.VarChar(32)
-  sourceType          String    @map("source_type") @db.VarChar(32)
-  sourceId            String    @map("source_id") @db.VarChar(80)
-  referenceCode       String    @map("reference_code") @db.VarChar(255)
-  customerMode        String    @default("final_consumer") @map("customer_mode") @db.VarChar(32)
-  finalConsumerReason String?   @map("final_consumer_reason") @db.VarChar(64)
-  status              String    @default("draft") @db.VarChar(32)
-  factusNumber        String?   @map("factus_number") @db.VarChar(120)
-  prefix              String?   @db.VarChar(32)
-  cufe                String?   @db.VarChar(255)
-  qr                  String?
-  pdfBase64           String?   @map("pdf_base64")
-  pdfFilename         String?   @map("pdf_filename") @db.VarChar(255)
-  xmlBase64           String?   @map("xml_base64")
-  xmlFilename         String?   @map("xml_filename") @db.VarChar(255)
-  payload             Json?
-  providerResponse    Json?     @map("provider_response")
-  errorMessage        String?   @map("error_message")
-  validatedAt         DateTime? @map("validated_at") @db.Timestamp(0)
-  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
-  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+// Facturación electrónica propia DIAN (modelo A): cada taller es emisor y
+// SuperAdmin controla su activación y configuración. No usa proveedor externo.
+model WorkshopDianConfig {
+  id                   BigInt   @id @default(autoincrement())
+  workshopId           BigInt   @unique @map("workshop_id")
+  enabled              Boolean  @default(false)
+  environment          String   @default("habilitacion") @db.VarChar(32)
+  personType           String   @default("juridica") @map("person_type") @db.VarChar(32)
+  documentType         String   @default("31") @map("document_type") @db.VarChar(16)
+  documentNumber       String?  @map("document_number") @db.VarChar(64)
+  dv                   String?  @db.VarChar(2)
+  legalName            String?  @map("legal_name") @db.VarChar(255)
+  address              String?  @db.VarChar(255)
+  city                 String?  @db.VarChar(120)
+  municipalityCode     String?  @map("municipality_code") @db.VarChar(16)
+  department           String?  @db.VarChar(120)
+  email                String?  @db.VarChar(255)
+  phone                String?  @db.VarChar(80)
+  taxRegime            String?  @map("tax_regime") @db.VarChar(80)
+  responsibilities     String?  @db.VarChar(255)
+  softwareId           String?  @map("software_id") @db.VarChar(255)
+  resolutionPrefix     String?  @map("resolution_prefix") @db.VarChar(32)
+  resolutionNumber     String?  @map("resolution_number") @db.VarChar(120)
+  technicalKeyEncrypted String? @map("technical_key_encrypted")
+  rangeFrom            Int?     @map("range_from")
+  rangeTo              Int?     @map("range_to")
+  nextInvoiceNumber    Int?     @map("next_invoice_number")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
 
-  workshop    Workshop     @relation(fields: [workshopId], references: [id], onDelete: Cascade)
-  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
-  payment     Payment?     @relation(fields: [paymentId], references: [id], onDelete: SetNull)
-  sale        Sale?        @relation(fields: [saleId], references: [id], onDelete: SetNull)
-  customer    User?        @relation("ElectronicInvoiceCustomer", fields: [customerId], references: [id], onDelete: SetNull)
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
 
-  @@unique([workshopId, provider, referenceCode])
-  @@unique([workshopId, sourceType, sourceId])
+  @@index([enabled])
+  @@map("workshop_dian_configs")
+}
+
+model DianElectronicDocument {
+  id                  BigInt   @id @default(autoincrement())
+  workshopId          BigInt   @map("workshop_id")
+  saleId              BigInt   @unique @map("sale_id")
+  prefix              String?  @db.VarChar(32)
+  number              Int
+  consecutive         String   @map("consecutive") @db.VarChar(80)
+  environment         String   @db.VarChar(32)
+  customerDocumentType String  @default("13") @map("customer_document_type") @db.VarChar(16)
+  customerDocument    String   @default("222222222222") @map("customer_document") @db.VarChar(64)
+  customerName        String   @default("Consumidor final") @map("customer_name") @db.VarChar(255)
+  customerEmail       String?  @map("customer_email") @db.VarChar(255)
+  cufe                String   @db.VarChar(128)
+  xml                 String
+  status              String   @default("generated") @db.VarChar(32)
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  sale     Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@unique([workshopId, consecutive])
   @@index([workshopId, status, createdAt])
-  @@index([appointmentId])
-  @@index([paymentId])
-  @@index([saleId])
-  @@map("electronic_invoices")
+  @@map("dian_electronic_documents")
 }
 
 // ─── Subscriptions (taller → MotorDesk SaaS billing) ───
@@ -1103,6 +1041,24 @@ model ActivityLog {
   @@map("activity_log")
 }
 
+// Índice de respaldos lógicos producidos por SuperAdmin. Los archivos se
+// conservan en R2 y nunca se eliminan automáticamente.
+model BackupRecord {
+  id            String    @id @default(uuid()) @db.Uuid
+  scope         String    @default("full") @db.VarChar(32)
+  status        String    @default("running") @db.VarChar(32)
+  objectKey     String    @unique @map("object_key") @db.VarChar(500)
+  sizeBytes     BigInt?   @map("size_bytes")
+  createdById   BigInt?   @map("created_by_id")
+  failureReason String?   @map("failure_reason")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt   DateTime? @map("completed_at") @db.Timestamptz(6)
+
+  @@index([scope, createdAt])
+  @@index([status, createdAt])
+  @@map("backup_records")
+}
+
 model Role {
   id        BigInt    @id @default(autoincrement())
   name      String    @db.VarChar(255)
@@ -1275,14 +1231,18 @@ model ChatSession {
   name       String?   @db.VarChar(120)
   phone      String?   @db.VarChar(40)
   workshopId BigInt?   @map("workshop_id")
+  status     String    @default("active") @db.VarChar(16)
+  accessTokenHash String? @map("access_token_hash") @db.VarChar(64)
   lastAt     DateTime  @default(now()) @map("last_at") @db.Timestamptz(6)
   seenAt     DateTime? @map("seen_at") @db.Timestamptz(6)
+  closedAt   DateTime? @map("closed_at") @db.Timestamptz(6)
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   workshop Workshop?     @relation(fields: [workshopId], references: [id])
   messages ChatMessage[]
 
   @@index([lastAt])
+  @@index([status, lastAt])
   @@index([workshopId])
   @@map("chat_sessions")
 }
