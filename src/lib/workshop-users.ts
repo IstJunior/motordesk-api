@@ -7,10 +7,11 @@ import { prisma } from "./db.js";
 import {
   actualizarEmailAuth,
   crearOActualizarAuthUser,
+  faltantesSupabaseAdmin,
   supabaseAdminDisponible,
 } from "./supabase-admin.js";
 
-export { supabaseAdminDisponible };
+export { faltantesSupabaseAdmin, supabaseAdminDisponible };
 
 export const ROLES_TALLER = [
   { value: "workshop_admin", label: "Administrador" },

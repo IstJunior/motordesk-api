@@ -26,6 +26,7 @@ import {
   agregarUsuario,
   cambiarPassword,
   listarUsuarios,
+  faltantesSupabaseAdmin,
   quitarUsuario,
   supabaseAdminDisponible,
 } from "../lib/workshop-users.js";
@@ -62,7 +63,9 @@ talleresRoutes.get("/meta/modules", (c) =>
 talleresRoutes.get("/meta/planes", async (c) => c.json(await listarPlanes()));
 talleresRoutes.get("/meta/roles", (c) => c.json({ roles: ROLES_TALLER }));
 // Indica si la API puede crear cuentas de acceso (service role de Supabase).
-talleresRoutes.get("/meta/acceso", (c) => c.json({ puedeCrearAcceso: supabaseAdminDisponible() }));
+talleresRoutes.get("/meta/acceso", (c) =>
+  c.json({ puedeCrearAcceso: supabaseAdminDisponible(), faltan: faltantesSupabaseAdmin() }),
+);
 
 // GET /talleres/:id — detalle (tipo DetalleComercio): módulos, suscripción, estado,
 // usuarios, whatsapp.

@@ -8,6 +8,15 @@ export function supabaseAdminDisponible(): boolean {
   return Boolean(SUPABASE_URL && SERVICE_KEY);
 }
 
+// Variables que faltan para poder gestionar contraseñas, para poder decirlo en
+// el panel en vez de dejar el campo gris sin explicación.
+export function faltantesSupabaseAdmin(): string[] {
+  const faltan: string[] = [];
+  if (!SUPABASE_URL) faltan.push("SUPABASE_URL");
+  if (!SERVICE_KEY) faltan.push("SUPABASE_SERVICE_ROLE_KEY");
+  return faltan;
+}
+
 function exigirConfig() {
   if (!supabaseAdminDisponible()) {
     throw new Error(
