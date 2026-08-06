@@ -152,6 +152,30 @@ export async function cambiarRol(workshopId: bigint, membresiaId: bigint, role: 
   await sincronizarRolSpatie(membresia.userId, role);
 }
 
+// Cambia (o crea) la contraseña de acceso de un usuario del taller, incluido el
+// dueño. La contraseña vive en Supabase Auth.
+export async function cambiarPassword(workshopId: bigint, membresiaId: bigint, password: string) {
+  const clave = password.trim();
+  if (clave.length < 8) throw new Error("La contraseña debe tener al menos 8 caracteres.");
+
+  const membresia = await prisma.workshopUser.findFirst({
+    where: { id: membresiaId, workshopId },
+    select: { user: { select: { id: true, name: true, email: true, isSuperAdmin: true } } },
+  });
+  if (!membresia) throw new Error("Usuario no pertenece al taller.");
+  if (membresia.user.isSuperAdmin) throw new Error("No puedes cambiar la contraseña de un superadmin.");
+
+  const authUid = await crearOActualizarAuthUser({
+    email: membresia.user.email,
+    password: clave,
+    name: membresia.user.name,
+  });
+  await prisma.user.update({
+    where: { id: membresia.user.id },
+    data: { authId: authUid, emailVerifiedAt: new Date() },
+  });
+}
+
 export async function quitarUsuario(workshopId: bigint, membresiaId: bigint) {
   const membresia = await prisma.workshopUser.findFirst({
     where: { id: membresiaId, workshopId },

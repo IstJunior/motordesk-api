@@ -23,6 +23,7 @@ import {
 import {
   ROLES_TALLER,
   agregarUsuario,
+  cambiarPassword,
   cambiarRol,
   listarUsuarios,
   quitarUsuario,
@@ -225,6 +226,22 @@ talleresRoutes.patch("/:id/users/:uid", async (c) => {
     return c.json({ error: e instanceof Error ? e.message : "No se pudo cambiar el rol" }, 400);
   }
   return c.json(await listarUsuarios(id));
+});
+
+// PATCH /talleres/:id/users/:uid/password — { password }
+talleresRoutes.patch("/:id/users/:uid/password", async (c) => {
+  const id = BigInt(c.req.param("id"));
+  const uid = BigInt(c.req.param("uid"));
+  const parsed = z
+    .object({ password: z.string().min(8).max(128) })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "La contraseña debe tener al menos 8 caracteres." }, 400);
+  try {
+    await cambiarPassword(id, uid, parsed.data.password);
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : "No se pudo cambiar la contraseña" }, 400);
+  }
+  return c.json({ ok: true });
 });
 
 // DELETE /talleres/:id/users/:uid — quita la membresía (no borra la cuenta).
