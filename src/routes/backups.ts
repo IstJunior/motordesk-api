@@ -84,7 +84,13 @@ backupsRoutes.post("/full", async (c) => {
   try {
     const r = await ejecutarBackupFull("manual");
     const purgados = await purgar("full", RETENER);
-    await auditar({ actor: c.get("superadmin"), accion: "backup.full", detalle: { key: r.objectKey } });
+    await auditar({
+      actor: c.get("superadmin"),
+      accion: "backup.full",
+      descripcion: "Respaldo completo de la base",
+      detalle: { key: r.objectKey, bytes: r.sizeBytes },
+    });
+    c.set("auditado", true);
     return c.json({ ...r, purgados });
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : "El respaldo falló" }, 500);
@@ -121,8 +127,10 @@ backupsRoutes.delete("/:id", async (c) => {
   await auditar({
     actor: c.get("superadmin"),
     accion: "backup.eliminar",
+    descripcion: "Borrado de un respaldo",
     detalle: { key: registro.objectKey },
   });
+  c.set("auditado", true);
   return c.json({ ok: true });
 });
 
@@ -159,9 +167,11 @@ backupsRoutes.post("/taller/:id", async (c) => {
     await auditar({
       actor: c.get("superadmin"),
       accion: "backup.taller",
+      descripcion: "Respaldo de un taller",
       tallerId: taller.id,
       detalle: { key: r.objectKey, filas: r.filas },
     });
+    c.set("auditado", true);
     return c.json({ ...r, purgados });
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : "El respaldo falló" }, 500);
@@ -207,9 +217,11 @@ backupsRoutes.post("/taller/:id/restaurar", async (c) => {
       await auditar({
         actor: c.get("superadmin"),
         accion: "backup.restaurar",
+        descripcion: "Restauración de un taller desde respaldo",
         tallerId: taller.id,
         detalle: { key: registro.objectKey, generadoEn: datos.generadoEn },
       });
+      c.set("auditado", true);
     }
     const insertadas = resultado.tablas.reduce((n, t) => n + t.insertadas, 0);
     const borradas = resultado.tablas.reduce((n, t) => n + t.borradas, 0);

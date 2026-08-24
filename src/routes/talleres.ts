@@ -85,9 +85,11 @@ talleresRoutes.post("/", async (c) => {
     await auditar({
       actor: c.get("superadmin"),
       accion: "taller.crear",
+      descripcion: "Alta de taller",
       tallerId: BigInt(taller.id),
       detalle: { code: taller.code, tipo: taller.tipo, servicios: taller.servicios },
     });
+    c.set("auditado", true);
     return c.json(taller, 201);
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : "No se pudo crear el taller" }, 400);
