@@ -1,10 +1,12 @@
 import {
   DeleteObjectCommand,
+  GetObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
   type S3ClientConfig,
 } from "@aws-sdk/client-s3";
+import type { Readable } from "node:stream";
 
 export interface R2Object {
   key: string;
@@ -78,6 +80,44 @@ export async function uploadR2Object(key: string, body: Buffer, contentType: str
     }),
   );
   return key;
+}
+
+// Sube un stream cuyo tamaño ya se conoce (p.ej. el dump de pg_dump ya escrito
+// en disco). PutObject exige ContentLength cuando el body no es un Buffer.
+export async function uploadR2Stream(
+  key: string,
+  body: Readable,
+  contentLength: number,
+  contentType = "application/octet-stream",
+): Promise<string> {
+  if (!r2Configured()) throw new Error("R2 no está configurado");
+  await getClient().send(
+    new PutObjectCommand({
+      Bucket: required("R2_BUCKET_NAME"),
+      Key: key,
+      Body: body,
+      ContentLength: contentLength,
+      ContentType: contentType,
+    }),
+  );
+  return key;
+}
+
+// Descarga un objeto como stream (para reenviarlo al panel sin cargarlo entero).
+export async function getR2Stream(key: string): Promise<{ body: Readable; size: number }> {
+  if (!r2Configured()) throw new Error("R2 no está configurado");
+  const res = await getClient().send(
+    new GetObjectCommand({ Bucket: required("R2_BUCKET_NAME"), Key: key }),
+  );
+  if (!res.Body) throw new Error(`El objeto ${key} no tiene contenido`);
+  return { body: res.Body as Readable, size: res.ContentLength ?? 0 };
+}
+
+export async function getR2Buffer(key: string): Promise<Buffer> {
+  const { body } = await getR2Stream(key);
+  const partes: Buffer[] = [];
+  for await (const trozo of body) partes.push(Buffer.from(trozo as Buffer));
+  return Buffer.concat(partes);
 }
 
 export async function deleteR2Object(key: string): Promise<void> {

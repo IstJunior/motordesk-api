@@ -30,6 +30,10 @@ import {
   quitarUsuario,
   supabaseAdminDisponible,
 } from "../lib/workshop-users.js";
+import { crearTaller } from "../lib/crear-taller.js";
+import { TIPOS_TALLER } from "../lib/workshop-types.js";
+import { resumenPlantillas } from "../lib/plantillas.js";
+import { auditar } from "../lib/auditoria.js";
 
 export const talleresRoutes = new Hono();
 talleresRoutes.use("*", superadminGuard);
@@ -56,7 +60,48 @@ talleresRoutes.get("/", async (c) => {
   return c.json(talleres);
 });
 
+// POST /talleres — alta de taller desde el panel del proveedor.
+const nuevoTallerSchema = z.object({
+  nombre: z.string().trim().min(2),
+  email: z.string().trim().email(),
+  tipo: z.string().optional(),
+  telefono: z.string().trim().optional().nullable(),
+  ciudad: z.string().trim().optional().nullable(),
+  direccion: z.string().trim().optional().nullable(),
+  duenoNombre: z.string().trim().min(2),
+  duenoEmail: z.string().trim().email().optional().nullable(),
+  duenoPassword: z.string().min(8).optional().nullable(),
+  diasTrial: z.number().int().min(0).max(365).optional(),
+  sembrarPlantillas: z.boolean().optional(),
+});
+
+talleresRoutes.post("/", async (c) => {
+  const parseo = nuevoTallerSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parseo.success) {
+    return c.json({ error: parseo.error.issues[0]?.message ?? "Datos inválidos" }, 400);
+  }
+  try {
+    const taller = await crearTaller(parseo.data);
+    await auditar({
+      actor: c.get("superadmin"),
+      accion: "taller.crear",
+      tallerId: BigInt(taller.id),
+      detalle: { code: taller.code, tipo: taller.tipo, servicios: taller.servicios },
+    });
+    return c.json(taller, 201);
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : "No se pudo crear el taller" }, 400);
+  }
+});
+
 // Catálogos (antes que `/:id` para que no los capture el parámetro).
+talleresRoutes.get("/meta/tipos", (c) =>
+  c.json({
+    tipos: TIPOS_TALLER.map((t) => ({ value: t.value, label: t.label })),
+    plantillas: resumenPlantillas(),
+  }),
+);
+
 talleresRoutes.get("/meta/modules", (c) =>
   c.json({ modules: MODULOS.map((m) => ({ value: m, label: ETIQUETA_MODULO[m] })) }),
 );
@@ -454,5 +499,8 @@ talleresRoutes.put("/:id/dian", async (c) => {
   return c.json({ ...resto, tieneClaveTecnica: Boolean(technicalKeyEncrypted) });
 });
 
-// POST /talleres/:id/backups — placeholder (módulo sin implementar).
-talleresRoutes.post("/:id/backups", (c) => c.json({ ok: true, note: "Backups: módulo no implementado" }));
+// Los respaldos viven en /backups (ver routes/backups.ts). Se deja el redirect
+// para no romper a quien todavía llame la ruta vieja del panel.
+talleresRoutes.post("/:id/backups", (c) =>
+  c.redirect(`/api/backups/taller/${c.req.param("id")}`, 308),
+);

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/db.js";
 import { avisarLead, UUID_RE } from "../lib/chat-notify.js";
 import { WEBHOOK_TOKEN, SESION_LEADS } from "../lib/openwa.js";
+import { rateLimit } from "../auth/rate-limit.js";
 
 // Chat público (widget de leads + webhook OpenWA). SIN auth.
 export const chatRoutes = new Hono();
@@ -15,7 +16,9 @@ const postSchema = z.object({
   telefono: z.string().max(40).optional(),
   workshopSlug: z.string().optional(),
 });
-chatRoutes.post("/", async (c) => {
+// 20 mensajes por minuto y por IP: un visitante real no escribe más rápido, y
+// sin esto cualquiera puede inflar chat_sessions/chat_messages sin autenticarse.
+chatRoutes.post("/", rateLimit({ max: 20, ventanaMs: 60_000 }), async (c) => {
   const parsed = postSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "Datos inválidos" }, 400);
   const { texto, nombre, telefono, workshopSlug } = parsed.data;
@@ -55,8 +58,13 @@ chatRoutes.post("/", async (c) => {
 });
 
 // GET /chat/:sid?desde=ID — poll del visitante.
-chatRoutes.get("/:sid", async (c) => {
-  const sid = c.req.param("sid");
+//
+// El widget consulta cada 4s (15/min). El techo de 240/min deja sitio a ~16
+// visitantes tras la misma IP (NAT de oficina o de operador móvil) y aun así
+// corta un bucle desbocado.
+chatRoutes.get("/:sid", rateLimit({ max: 240, ventanaMs: 60_000 }), async (c) => {
+  // Con middleware inline, Hono deja de inferir el parámetro como obligatorio.
+  const sid = c.req.param("sid") ?? "";
   if (!UUID_RE.test(sid)) return c.json({ error: "Sesión inválida" }, 400);
   const desde = Number(c.req.query("desde") ?? 0) || 0;
   const filas = await prisma.chatMessage.findMany({
