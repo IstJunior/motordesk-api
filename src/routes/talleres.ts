@@ -114,12 +114,12 @@ talleresRoutes.get("/meta/roles", (c) => c.json({ roles: ROLES_TALLER }));
 // Indica si la API puede crear cuentas de acceso (service role de Supabase) y
 // si puede mandar la invitación por correo. El panel usa esto para deshabilitar
 // la casilla con una explicación en vez de dejarla gris sin motivo.
-talleresRoutes.get("/meta/acceso", (c) =>
+talleresRoutes.get("/meta/acceso", async (c) =>
   c.json({
     puedeCrearAcceso: supabaseAdminDisponible(),
     faltan: faltantesSupabaseAdmin(),
-    puedeInvitar: correoDisponible(),
-    faltanCorreo: faltantesCorreo(),
+    puedeInvitar: await correoDisponible(),
+    faltanCorreo: await faltantesCorreo(),
   }),
 );
 

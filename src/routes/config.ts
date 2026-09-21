@@ -3,6 +3,16 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/db.js";
 import { superadminGuard } from "../auth/middleware.js";
+import {
+  configEfectiva,
+  configEntorno,
+  configGuardada,
+  faltantes,
+  guardarConfigCorreo,
+  sirve,
+} from "../lib/correo-config.js";
+import { transporteDe } from "../lib/email.js";
+import { renderEmail, paragraph } from "../lib/email-template.js";
 
 // Configuración global (superadmin): ajustes de plataforma + proveedores de IA.
 export const configRoutes = new Hono();
@@ -167,4 +177,109 @@ configRoutes.delete("/ai-providers/:id", async (c) => {
     return c.json({ error: e instanceof Error ? e.message : "No se pudo eliminar" }, 400);
   }
   return c.json({ ok: true });
+});
+
+// --- Correo saliente de la plataforma ---
+//
+// Las credenciales SMTP se configuran aquí y no por variables de entorno: son
+// un dato de operación, no del despliegue, y cambiarlas no debería exigir un
+// redeploy. Se guardan en `system_settings` bajo la clave que ya lee el
+// monolito, así que el panel del taller las toma sin cambiar nada.
+
+// La contraseña nunca vuelve al navegador: solo si existe.
+async function estadoCorreo() {
+  const guardada = await configGuardada();
+  const efectiva = await configEfectiva();
+  const entorno = configEntorno();
+
+  return {
+    // Lo que se muestra en el formulario. Si todavía no hay fila, se precargan
+    // los valores del entorno para que el superadmin solo confirme y guarde.
+    valores: {
+      enabled: guardada?.enabled ?? true,
+      smtpHost: guardada?.smtpHost ?? entorno?.smtpHost ?? "",
+      smtpPort: guardada?.smtpPort ?? entorno?.smtpPort ?? 465,
+      smtpSecure: guardada?.smtpSecure ?? entorno?.smtpSecure ?? true,
+      smtpUser: guardada?.smtpUser ?? entorno?.smtpUser ?? "",
+      fromName: guardada?.fromName ?? entorno?.fromName ?? "MotorDesk",
+      fromEmail: guardada?.fromEmail ?? entorno?.fromEmail ?? "",
+    },
+    tienePassword: Boolean(guardada?.smtpPass),
+    // Sin fila guardada, el entorno trae la suya y el formulario no tiene que
+    // pedirla de nuevo para poder guardar.
+    heredaPassword: !guardada?.smtpPass && Boolean(entorno?.smtpPass),
+    guardado: sirve(guardada),
+    origen: efectiva?.origen ?? null,
+    faltan: efectiva ? [] : faltantes(guardada ?? entorno),
+  };
+}
+
+configRoutes.get("/smtp", async (c) => c.json(await estadoCorreo()));
+
+const smtpSchema = z.object({
+  enabled: z.boolean().default(true),
+  smtpHost: z.string().trim().min(1, "Falta el servidor").max(255),
+  smtpPort: z.number().int().min(1).max(65535),
+  smtpSecure: z.boolean(),
+  smtpUser: z.string().trim().min(1, "Falta el usuario").max(255),
+  fromName: z.string().trim().max(255).default("MotorDesk"),
+  fromEmail: z.string().trim().email("El remitente no es un correo válido").max(255),
+  // Vacío = conservar la guardada.
+  smtpPass: z.string().optional().nullable(),
+});
+
+configRoutes.put("/smtp", async (c) => {
+  const parsed = smtpSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" }, 400);
+  }
+  const d = parsed.data;
+
+  // Si no llega contraseña nueva y tampoco hay guardada, se toma la del
+  // entorno: es la que está funcionando hoy y guardar no debería apagarlo.
+  const heredada = d.smtpPass?.trim() ? null : (await configGuardada())?.smtpPass ?? configEntorno()?.smtpPass ?? null;
+
+  try {
+    await guardarConfigCorreo({ ...d, smtpPass: d.smtpPass?.trim() || heredada });
+  } catch (e) {
+    // encryptJson exige PAYMENT_CREDENTIALS_ENCRYPTION_KEY. Vale la pena decirlo
+    // con nombre y apellido en vez de devolver un 500 mudo.
+    return c.json({ error: e instanceof Error ? e.message : "No se pudo guardar" }, 400);
+  }
+
+  return c.json(await estadoCorreo());
+});
+
+const pruebaSchema = z.object({ to: z.string().trim().email("El destinatario no es un correo válido") });
+
+// POST /config/smtp/prueba — manda un correo real con la config vigente. Es la
+// única forma de saber que las credenciales sirven: SMTP no falla al guardar,
+// falla al enviar.
+configRoutes.post("/smtp/prueba", async (c) => {
+  const parsed = pruebaSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" }, 400);
+
+  const resuelto = await configEfectiva();
+  if (!resuelto) return c.json({ error: `Correo sin configurar: falta ${faltantes(await configGuardada()).join(", ")}.` }, 400);
+
+  const { config, origen } = resuelto;
+  try {
+    await transporteDe(config).sendMail({
+      from: `${config.fromName} <${config.fromEmail}>`,
+      to: parsed.data.to,
+      subject: "Prueba de correo — MotorDesk",
+      html: renderEmail({
+        heading: "El correo saliente funciona",
+        preheader: "Prueba enviada desde el panel del proveedor.",
+        blocks: [
+          paragraph("Este mensaje se envió desde el panel del proveedor para verificar la configuración SMTP."),
+          paragraph(`Servidor: ${config.smtpHost}:${config.smtpPort} · Remitente: ${config.fromEmail}`),
+        ],
+      }),
+    });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : "No se pudo enviar" }, 400);
+  }
+
+  return c.json({ ok: true, a: parsed.data.to, origen });
 });

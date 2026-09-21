@@ -34,8 +34,9 @@ export type ResultadoInvitacion =
   | { enviada: false; motivo: string };
 
 export async function enviarInvitacionTaller(datos: DatosInvitacion): Promise<ResultadoInvitacion> {
-  if (!correoDisponible()) {
-    return { enviada: false, motivo: `Correo no configurado en la API: falta ${faltantesCorreo().join(", ")}.` };
+  if (!(await correoDisponible())) {
+    const faltan = await faltantesCorreo();
+    return { enviada: false, motivo: `Correo sin configurar en Sistema → Correo saliente: falta ${faltan.join(", ")}.` };
   }
 
   const login = `${appOrigin()}/login`;
