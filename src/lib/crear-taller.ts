@@ -11,7 +11,7 @@ import { agregarUsuario } from "./workshop-users.js";
 import { normalizarTipoTaller, tiposVehiculoPorDefecto, type TipoTaller } from "./workshop-types.js";
 import { plantillaDeTaller, preciosDe } from "./plantillas.js";
 import { modulosPorDefecto } from "./modules.js";
-import { enviarInvitacionTaller } from "./invitacion";
+import { enviarInvitacionTaller } from "./invitacion.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

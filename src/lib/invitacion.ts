@@ -1,6 +1,6 @@
-import { enviarCorreo, correoDisponible, faltantesCorreo } from "./email";
-import { bulletList, codeBox, dataTable, note, paragraph, renderEmail } from "./email-template";
-import { enlaceDefinirPassword } from "./supabase-admin";
+import { enviarCorreo, correoDisponible, faltantesCorreo } from "./email.js";
+import { bulletList, codeBox, dataTable, note, paragraph, renderEmail } from "./email-template.js";
+import { enlaceDefinirPassword } from "./supabase-admin.js";
 
 // Invitación al taller que el proveedor da de alta.
 //

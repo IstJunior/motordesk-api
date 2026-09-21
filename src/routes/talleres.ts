@@ -34,7 +34,7 @@ import { crearTaller } from "../lib/crear-taller.js";
 import { TIPOS_TALLER } from "../lib/workshop-types.js";
 import { resumenPlantillas } from "../lib/plantillas.js";
 import { auditar } from "../lib/auditoria.js";
-import { correoDisponible, faltantesCorreo } from "../lib/email";
+import { correoDisponible, faltantesCorreo } from "../lib/email.js";
 
 export const talleresRoutes = new Hono();
 talleresRoutes.use("*", superadminGuard);
