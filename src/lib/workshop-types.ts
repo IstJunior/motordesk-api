@@ -48,3 +48,28 @@ export function tiposVehiculoPorDefecto(valor: unknown): string[] {
   const tipo = normalizarTipoTaller(valor);
   return [...(TIPOS_TALLER.find((t) => t.value === tipo)?.vehicleTypes ?? [])];
 }
+
+// Etiquetas en español de los tipos de vehículo. Mismo mapa que el informe de
+// turno del monolito (`src/lib/appointment-report.ts`), para que el taller lea
+// lo mismo en el correo y en el PDF.
+const ETIQUETAS_VEHICULO: Record<string, string> = {
+  motorcycle: "Motocicleta",
+  car: "Automóvil",
+  suv: "SUV / Camioneta",
+  truck: "Camión",
+  pickup: "Pickup",
+  van: "Furgoneta / Van",
+  atv: "ATV / Cuatrimoto",
+  electric: "Vehículo eléctrico",
+  escooter: "Scooter eléctrico",
+  emoto: "Moto eléctrica",
+};
+
+export function etiquetaVehiculo(valor: string): string {
+  return ETIQUETAS_VEHICULO[valor] ?? valor;
+}
+
+export function etiquetaTipoTaller(valor: unknown): string {
+  const tipo = normalizarTipoTaller(valor);
+  return TIPOS_TALLER.find((t) => t.value === tipo)?.label ?? tipo;
+}

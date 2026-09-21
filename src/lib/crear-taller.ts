@@ -8,7 +8,13 @@
 import { prisma } from "./db.js";
 import { extenderTrial } from "./billing.js";
 import { agregarUsuario } from "./workshop-users.js";
-import { normalizarTipoTaller, tiposVehiculoPorDefecto, type TipoTaller } from "./workshop-types.js";
+import {
+  etiquetaTipoTaller,
+  etiquetaVehiculo,
+  normalizarTipoTaller,
+  tiposVehiculoPorDefecto,
+  type TipoTaller,
+} from "./workshop-types.js";
 import { plantillaDeTaller, preciosDe } from "./plantillas.js";
 import { modulosPorDefecto } from "./modules.js";
 import { enviarInvitacionTaller } from "./invitacion.js";
@@ -221,6 +227,18 @@ export async function crearTaller(datos: DatosNuevoTaller): Promise<ResultadoAlt
         duenoEmail,
         diasTrial: datos.diasTrial ?? null,
         conAcceso: alta.accesoCreado,
+        // La contraseña viaja escrita solo si el proveedor la asignó: la idea es
+        // que el dueño entre directo, sin un paso previo para definirla.
+        password: alta.accesoCreado ? datos.duenoPassword?.trim() || null : null,
+        // El dueño no vio la pantalla del alta. Esta es su primera oportunidad
+        // de revisar cómo quedó cargado el taller.
+        perfil: {
+          tipo: etiquetaTipoTaller(tipo),
+          vehiculos: tiposVehiculoPorDefecto(tipo).map(etiquetaVehiculo),
+          ciudad: datos.ciudad?.trim() || null,
+          direccion: datos.direccion?.trim() || null,
+          telefono: datos.telefono?.trim() || null,
+        },
       });
       invitacion = envio.enviada ? { enviada: true } : { enviada: false, motivo: envio.motivo };
     } catch (error) {
