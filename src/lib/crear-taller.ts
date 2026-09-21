@@ -11,6 +11,7 @@ import { agregarUsuario } from "./workshop-users.js";
 import { normalizarTipoTaller, tiposVehiculoPorDefecto, type TipoTaller } from "./workshop-types.js";
 import { plantillaDeTaller, preciosDe } from "./plantillas.js";
 import { modulosPorDefecto } from "./modules.js";
+import { enviarInvitacionTaller } from "./invitacion";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -71,6 +72,8 @@ export type DatosNuevoTaller = {
   diasTrial?: number;
   // Sembrar catálogo de servicios + checklists.
   sembrarPlantillas?: boolean;
+  // Mandarle al dueño el correo de bienvenida con sus datos de acceso.
+  enviarInvitacion?: boolean;
 };
 
 export type ResultadoAlta = {
@@ -83,6 +86,8 @@ export type ResultadoAlta = {
   checklists: number;
   accesoCreado: boolean;
   duenoEmail: string;
+  // null cuando no se pidió invitación.
+  invitacion: { enviada: boolean; motivo?: string } | null;
 };
 
 export async function crearTaller(datos: DatosNuevoTaller): Promise<ResultadoAlta> {
@@ -203,6 +208,30 @@ export async function crearTaller(datos: DatosNuevoTaller): Promise<ResultadoAlt
   const dias = datos.diasTrial ?? 15;
   if (dias > 0) await extenderTrial(taller.id, dias);
 
+  // La invitación va al final y no revierte el alta si falla: el taller ya
+  // quedó creado y el superadmin puede reenviarla. Se informa el resultado en
+  // la respuesta para que el panel lo diga en vez de fallar en silencio.
+  let invitacion: ResultadoAlta["invitacion"] = null;
+  if (datos.enviarInvitacion) {
+    try {
+      const envio = await enviarInvitacionTaller({
+        taller: taller.name,
+        codigo: taller.code ?? "",
+        duenoNombre,
+        duenoEmail,
+        diasTrial: datos.diasTrial ?? null,
+        conAcceso: alta.accesoCreado,
+      });
+      invitacion = envio.enviada ? { enviada: true } : { enviada: false, motivo: envio.motivo };
+    } catch (error) {
+      console.error("[crear-taller] no se pudo enviar la invitación", error);
+      invitacion = {
+        enviada: false,
+        motivo: error instanceof Error ? error.message : "No se pudo enviar la invitación.",
+      };
+    }
+  }
+
   return {
     id: taller.id.toString(),
     nombre: taller.name,
@@ -213,5 +242,6 @@ export async function crearTaller(datos: DatosNuevoTaller): Promise<ResultadoAlt
     checklists,
     accesoCreado: alta.accesoCreado,
     duenoEmail,
+    invitacion,
   };
 }

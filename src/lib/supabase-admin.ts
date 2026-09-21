@@ -93,6 +93,31 @@ export async function crearOActualizarAuthUser(input: {
   return data.id;
 }
 
+// Enlace de un solo uso para que el dueño defina su contraseña.
+//
+// Se usa en la invitación que manda el proveedor al dar de alta un taller: el
+// correo nunca lleva la contraseña escrita, lleva este enlace. Sirve igual si
+// el superadmin asignó una clave (el dueño puede cambiarla) o si no asignó
+// ninguna (es la única forma de entrar).
+//
+// `recovery` en vez de `invite` a propósito: `invite` falla cuando la cuenta ya
+// existe, y aquí puede existir porque el alta de taller la crea antes.
+export async function enlaceDefinirPassword(email: string, redirectTo: string): Promise<string | null> {
+  if (!supabaseAdminDisponible()) return null;
+  try {
+    const data = await admin<{ action_link?: string }>("/admin/generate_link", {
+      method: "POST",
+      body: JSON.stringify({ type: "recovery", email, redirect_to: redirectTo }),
+    });
+    return data.action_link ?? null;
+  } catch (error) {
+    // Sin enlace la invitación igual se manda: el dueño puede usar
+    // "¿Olvidaste tu contraseña?" desde la pantalla de acceso.
+    console.error("[supabase-admin] no se pudo generar el enlace de contraseña", error);
+    return null;
+  }
+}
+
 // Cambia el correo de acceso. Si la cuenta aún no existe en Supabase no hay
 // nada que mover: se creará con el correo nuevo al asignarle contraseña.
 export async function actualizarEmailAuth(

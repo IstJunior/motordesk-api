@@ -6,3 +6,4 @@ dist
 
 # Ops/seed scripts del monolito — no van en la API (contenian secretos)
 prisma/*.mjs
+.gstack/

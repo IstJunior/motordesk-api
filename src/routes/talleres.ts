@@ -34,6 +34,7 @@ import { crearTaller } from "../lib/crear-taller.js";
 import { TIPOS_TALLER } from "../lib/workshop-types.js";
 import { resumenPlantillas } from "../lib/plantillas.js";
 import { auditar } from "../lib/auditoria.js";
+import { correoDisponible, faltantesCorreo } from "../lib/email";
 
 export const talleresRoutes = new Hono();
 talleresRoutes.use("*", superadminGuard);
@@ -73,6 +74,7 @@ const nuevoTallerSchema = z.object({
   duenoPassword: z.string().min(8).optional().nullable(),
   diasTrial: z.number().int().min(0).max(365).optional(),
   sembrarPlantillas: z.boolean().optional(),
+  enviarInvitacion: z.boolean().optional(),
 });
 
 talleresRoutes.post("/", async (c) => {
@@ -87,7 +89,7 @@ talleresRoutes.post("/", async (c) => {
       accion: "taller.crear",
       descripcion: "Alta de taller",
       tallerId: BigInt(taller.id),
-      detalle: { code: taller.code, tipo: taller.tipo, servicios: taller.servicios },
+      detalle: { code: taller.code, tipo: taller.tipo, servicios: taller.servicios, invitacion: taller.invitacion?.enviada ?? null },
     });
     c.set("auditado", true);
     return c.json(taller, 201);
@@ -109,9 +111,16 @@ talleresRoutes.get("/meta/modules", (c) =>
 );
 talleresRoutes.get("/meta/planes", async (c) => c.json(await listarPlanes()));
 talleresRoutes.get("/meta/roles", (c) => c.json({ roles: ROLES_TALLER }));
-// Indica si la API puede crear cuentas de acceso (service role de Supabase).
+// Indica si la API puede crear cuentas de acceso (service role de Supabase) y
+// si puede mandar la invitación por correo. El panel usa esto para deshabilitar
+// la casilla con una explicación en vez de dejarla gris sin motivo.
 talleresRoutes.get("/meta/acceso", (c) =>
-  c.json({ puedeCrearAcceso: supabaseAdminDisponible(), faltan: faltantesSupabaseAdmin() }),
+  c.json({
+    puedeCrearAcceso: supabaseAdminDisponible(),
+    faltan: faltantesSupabaseAdmin(),
+    puedeInvitar: correoDisponible(),
+    faltanCorreo: faltantesCorreo(),
+  }),
 );
 
 // GET /talleres/:id — detalle (tipo DetalleComercio): módulos, suscripción, estado,
