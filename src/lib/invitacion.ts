@@ -27,6 +27,12 @@ export type DatosInvitacion = {
   diasTrial?: number | null;
   /** El superadmin asignó una contraseña al crear el taller. */
   conAcceso: boolean;
+  /**
+   * Destinatario alternativo. Sirve para que el proveedor se mande una copia y
+   * vea cómo le va a llegar al taller antes de mandársela de verdad. El cuerpo
+   * es el mismo: los datos del correo siguen siendo los del dueño.
+   */
+  enviarA?: string | null;
 };
 
 export type ResultadoInvitacion =
@@ -75,8 +81,10 @@ export async function enviarInvitacionTaller(datos: DatosInvitacion): Promise<Re
     paragraph("Si algo no cuadra o necesitas una mano para arrancar, responde a este correo y te ayudamos."),
   ];
 
+  const destino = datos.enviarA?.trim() || datos.duenoEmail;
+
   await enviarCorreo({
-    to: datos.duenoEmail,
+    to: destino,
     subject: `Bienvenido a MotorDesk — ${datos.taller} ya está listo`,
     html: renderEmail({
       heading: `${datos.taller} ya está en MotorDesk`,
@@ -87,5 +95,5 @@ export async function enviarInvitacionTaller(datos: DatosInvitacion): Promise<Re
     }),
   });
 
-  return { enviada: true, a: datos.duenoEmail };
+  return { enviada: true, a: destino };
 }
