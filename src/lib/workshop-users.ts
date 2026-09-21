@@ -17,6 +17,8 @@ export const ROLES_TALLER = [
   { value: "workshop_admin", label: "Administrador" },
   { value: "workshop_manager", label: "Gerente" },
   { value: "workshop_receptionist", label: "Recepcionista" },
+  // Mostrador: vende y mueve inventario, sin tocar la configuración del taller.
+  { value: "workshop_cashier", label: "Ventas / Mostrador" },
   { value: "workshop_technician", label: "Técnico" },
   { value: "workshop_viewer", label: "Solo lectura" },
 ] as const;
