@@ -7,7 +7,6 @@
 export const MODULOS = [
   "inventario",
   "facturacion_electronica",
-  "pagos",
   "sedes", // multi-sucursal
 ] as const;
 
@@ -34,7 +33,6 @@ export const MODULOS_CORE = [
 export const ETIQUETA_MODULO: Record<Modulo, string> = {
   inventario: "Inventario",
   facturacion_electronica: "Facturación electrónica (DIAN)",
-  pagos: "Pagos en línea",
   sedes: "Sedes (multi-sucursal)",
 };
 
