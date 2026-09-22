@@ -198,7 +198,7 @@ export async function crearTaller(datos: DatosNuevoTaller): Promise<ResultadoAlt
             workshopId: taller.id,
             serviceId: servicio.id,
             name: s.nombre,
-            description: "Plantilla base creada con el taller. Editable desde Checklists.",
+            description: "Checklist base creado con el taller. Editable desde el servicio.",
             isActive: true,
             items: {
               create: s.checklist.map((label, i) => ({ label, sortOrder: i, required: true })),
