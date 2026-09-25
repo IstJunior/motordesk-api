@@ -4,7 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { prisma } from "../lib/db.js";
 import { superadminGuard } from "../auth/middleware.js";
 import { auditar } from "../lib/auditoria.js";
-import { enviarTexto, openwaHabilitado, SESION_LEADS } from "../lib/openwa.js";
+import { enviarImagen, enviarTexto, openwaHabilitado, SESION_LEADS } from "../lib/openwa.js";
 
 // Invitar a un taller a usar MotorDesk.
 //
@@ -26,8 +26,27 @@ const CORTESIA = 30;
 
 const hashDelToken = (t: string) => createHash("sha256").update(t).digest("hex");
 
+/**
+ * El sitio público, que es quien sirve `/rt/<token>`.
+ *
+ * No vale `PANEL_URL` —ese es el panel de administración, un dominio distinto—
+ * ni `BACKEND_URL`, que apunta a esta misma API bajo `/control-api`. Confundirlos
+ * mandó una invitación con un enlace a un dominio que ni siquiera resuelve.
+ *
+ * Se deriva de `BACKEND_URL` quitándole el sufijo de la API, que da el dominio
+ * del monolito. `SITIO_URL` lo sobreescribe si algún día dejan de compartirlo.
+ */
 function baseDelSitio(): string {
-  return (process.env.PANEL_URL ?? process.env.BACKEND_URL ?? "https://motordesk.nexcoreia.com").replace(/\/+$/, "");
+  const explicito = process.env.SITIO_URL?.trim();
+  if (explicito) return explicito.replace(/\/+$/, "");
+  const api = (process.env.BACKEND_URL ?? "").trim().replace(/\/+$/, "");
+  if (api) return api.replace(/\/control-api$/, "");
+  return "https://motordesk.nexcoreia.com";
+}
+
+/** Tarjeta de presentación que acompaña la invitación. La sirve el monolito. */
+function imagenDePresentacion(): string {
+  return `${baseDelSitio()}/invitacion-motordesk.png`;
 }
 
 /** A `57XXXXXXXXXX`, que es como los quiere el gateway. */
@@ -38,7 +57,24 @@ function normalizarCelular(crudo: string): string | null {
   return d.length >= 10 ? d : null;
 }
 
-/** El texto que recibe el dueño del taller. */
+/**
+ * El texto que acompaña la tarjeta.
+ *
+ * Va debajo de la imagen, así que no repite lo que la imagen ya enumera. La
+ * primera versión listaba turnos, inventario y caja en el propio mensaje: el
+ * lector veía dos veces lo mismo y ninguna de las dos le decía por qué le
+ * estaban escribiendo a él.
+ *
+ * Lo que sí tiene que hacer el texto, en el orden en que se lee:
+ *
+ *   1. quién escribe, antes de que decida si sigue leyendo
+ *   2. qué gana, en concreto y con sus palabras: no "gestión integral" sino
+ *      dejar de contestar "¿ya está listo?" doce veces al día
+ *   3. quitar la objeción del cobro, antes del enlace y no después
+ *   4. una sola acción, con el costo dicho por adelantado
+ *
+ * De usted, porque quien recibe esto es un dueño de taller que no nos conoce.
+ */
 function mensajeDeInvitacion(e: {
   nombreDelDueno: string | null;
   nombreDelTaller: string | null;
@@ -46,17 +82,18 @@ function mensajeDeInvitacion(e: {
   url: string;
 }): string {
   const saludo = e.nombreDelDueno ? `Hola ${e.nombreDelDueno}` : "Hola";
-  const taller = e.nombreDelTaller ? ` de ${e.nombreDelTaller}` : "";
+  const taller = e.nombreDelTaller ? `a ${e.nombreDelTaller}` : "a su taller";
   return [
     `${saludo}, le escribimos de MotorDesk.`,
     "",
-    `Dejamos listo el acceso${taller} para que empiece a usar el sistema: turnos, agenda, inventario, caja y avisos a sus clientes por WhatsApp, todo en un solo lugar.`,
+    `Lo invitamos a llevar ${taller} y sus clientes en un solo lugar, con aviso automático del avance de cada turno, para que no le toque estar contestando "¿ya está listo?".`,
     "",
-    `Tiene ${e.diasDeCortesia} días de cortesía. No se pide tarjeta y no hay cobro automático.`,
+    `Le damos ${e.diasDeCortesia} días de cortesía. No pedimos tarjeta y no hay cobro automático.`,
     "",
-    `Active su taller acá: ${e.url}`,
+    "Actívelo acá, son dos minutos:",
+    e.url,
     "",
-    "Son dos minutos. Cualquier duda, responda a este mismo mensaje.",
+    "Cualquier duda, respóndanos por este mismo chat.",
   ].join("\n");
 }
 
@@ -113,11 +150,23 @@ invitacionesRoutes.post("/", async (c) => {
   // la única comprobación que no miente.
   let enviado = false;
   if (openwaHabilitado()) {
-    enviado = await enviarTexto(SESION_LEADS, telefono, texto)
+    // Va como imagen con el texto de pie: un enlace suelto de alguien
+    // desconocido se parece demasiado a los que uno no abre. La tarjeta dice de
+    // quién viene antes de que haya que leer nada.
+    //
+    // Si la imagen falla —el gateway no pudo descargarla, por ejemplo— se manda
+    // el texto solo. Quedarse sin invitación por no poder adjuntar una foto
+    // sería cambiar lo importante por lo accesorio.
+    enviado = await enviarImagen(SESION_LEADS, telefono, imagenDePresentacion(), texto)
       .then(() => true)
-      .catch((e) => {
-        console.error("invitación por la línea de MotorDesk:", e instanceof Error ? e.message : e);
-        return false;
+      .catch(async (e) => {
+        console.error("invitación con imagen:", e instanceof Error ? e.message : e);
+        return enviarTexto(SESION_LEADS, telefono, texto)
+          .then(() => true)
+          .catch((e2) => {
+            console.error("invitación por la línea de MotorDesk:", e2 instanceof Error ? e2.message : e2);
+            return false;
+          });
       });
   }
 

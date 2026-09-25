@@ -90,6 +90,26 @@ export async function enviarTexto(nombre: string, numero: string, text: string):
   await api(`/api/sessions/${id}/messages/send-text`, { method: "POST", body: { chatId, text } });
 }
 
+/**
+ * Manda una imagen con su texto debajo, en un solo mensaje.
+ *
+ * La imagen viaja por URL, no en base64: el gateway la descarga. Es lo que
+ * quiere WhatsApp para que salga como foto con pie y no como archivo adjunto.
+ */
+export async function enviarImagen(
+  nombre: string,
+  numero: string,
+  imagenUrl: string,
+  caption: string,
+): Promise<void> {
+  const id = await sesionId(nombre);
+  const chatId = `${numero.replace(/\D/g, "")}@c.us`;
+  await api(`/api/sessions/${id}/messages/send-image`, {
+    method: "POST",
+    body: { chatId, url: imagenUrl, caption, filename: "motordesk.png" },
+  });
+}
+
 // Nombre de sesión de un taller a partir de su código (T-0001 → taller-t-0001).
 export function sesionTaller(code: string): string {
   return `taller-${code.toLowerCase()}`;
