@@ -4,6 +4,7 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { authRoutes } from "./routes/auth.js";
 import { talleresRoutes } from "./routes/talleres.js";
+import { invitacionesRoutes } from "./routes/invitaciones.js";
 import { configRoutes } from "./routes/config.js";
 import { manualesRoutes } from "./routes/manuales.js";
 import { vehiculosRoutes } from "./routes/vehiculos.js";
@@ -40,6 +41,7 @@ for (const base of ["/talleres", "/config", "/manuales", "/vehiculos", "/backups
 
 // Control-plane (superadmin).
 api.route("/talleres", talleresRoutes);
+api.route("/invitaciones", invitacionesRoutes);
 api.route("/config", configRoutes);
 api.route("/manuales", manualesRoutes);
 api.route("/vehiculos", vehiculosRoutes);
