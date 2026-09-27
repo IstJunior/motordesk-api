@@ -23,9 +23,40 @@ export const ROLES_TALLER = [
   { value: "workshop_viewer", label: "Solo lectura" },
 ] as const;
 
+export const ROLES_TALLER_VALUES: string[] = ROLES_TALLER.map((r) => r.value);
+
 export function esRolValido(role: string): boolean {
   return ROLES_TALLER.some((r) => r.value === role);
 }
+
+/**
+ * Quién cuenta como PERSONAL del taller.
+ *
+ * `workshop_user` no guarda solo al equipo: los clientes del taller viven ahí
+ * con `role = 'client'`. Sin este filtro el panel mostraba 376 personas en
+ * Toximotos, que tiene dos. Es el mismo criterio que ya aplica el panel del
+ * taller; acá faltaba.
+ *
+ * También se excluyen las cuentas borradas y los superadmins: ninguno de los
+ * dos es empleado del taller.
+ */
+/**
+ * Estas operaciones son sobre PERSONAL del taller, no sobre clientes.
+ *
+ * El listado ya no los muestra, pero los endpoints reciben un id y lo aceptan:
+ * sin esta comprobación se le podía cambiar el rol a un cliente —convirtiéndolo
+ * en administrador— o desvincularlo del taller desde el panel.
+ */
+function exigirPersonal(role: string) {
+  if (!esRolValido(role)) {
+    throw new Error("Esa persona es cliente del taller, no parte del equipo.");
+  }
+}
+
+export const SOLO_PERSONAL = {
+  role: { in: ROLES_TALLER_VALUES },
+  user: { is: { deletedAt: null, isSuperAdmin: false } },
+} as const;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -56,7 +87,7 @@ async function sincronizarRolSpatie(userId: bigint, role: string) {
 
 export function listarUsuarios(workshopId: bigint) {
   return prisma.workshopUser.findMany({
-    where: { workshopId },
+    where: { workshopId, ...SOLO_PERSONAL },
     select: {
       id: true,
       role: true,
@@ -153,10 +184,11 @@ export async function actualizarUsuario(
 ) {
   const membresia = await prisma.workshopUser.findFirst({
     where: { id: membresiaId, workshopId },
-    select: { id: true, userId: true, isOwner: true, user: { select: { email: true, name: true, isSuperAdmin: true } } },
+    select: { id: true, userId: true, isOwner: true, role: true, user: { select: { email: true, name: true, isSuperAdmin: true } } },
   });
   if (!membresia) throw new Error("Usuario no pertenece al taller.");
   if (membresia.user.isSuperAdmin) throw new Error("No puedes editar a un superadmin desde un taller.");
+  exigirPersonal(membresia.role);
 
   const nombre = cambios.nombre?.trim();
   const email = cambios.email?.trim().toLowerCase();
@@ -220,10 +252,11 @@ export async function cambiarPassword(workshopId: bigint, membresiaId: bigint, p
 
   const membresia = await prisma.workshopUser.findFirst({
     where: { id: membresiaId, workshopId },
-    select: { user: { select: { id: true, name: true, email: true, isSuperAdmin: true } } },
+    select: { role: true, user: { select: { id: true, name: true, email: true, isSuperAdmin: true } } },
   });
   if (!membresia) throw new Error("Usuario no pertenece al taller.");
   if (membresia.user.isSuperAdmin) throw new Error("No puedes cambiar la contraseña de un superadmin.");
+  exigirPersonal(membresia.role);
 
   const authUid = await crearOActualizarAuthUser({
     email: membresia.user.email,
@@ -241,8 +274,9 @@ export async function cambiarPassword(workshopId: bigint, membresiaId: bigint, p
 export async function quitarUsuario(workshopId: bigint, membresiaId: bigint) {
   const membresia = await prisma.workshopUser.findFirst({
     where: { id: membresiaId, workshopId },
-    select: { id: true },
+    select: { id: true, role: true },
   });
   if (!membresia) throw new Error("Usuario no pertenece al taller.");
+  exigirPersonal(membresia.role);
   await prisma.workshopUser.delete({ where: { id: membresia.id } });
 }

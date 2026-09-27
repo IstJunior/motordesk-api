@@ -22,11 +22,12 @@ import {
 } from "../lib/billing.js";
 import {
   ROLES_TALLER,
+  SOLO_PERSONAL,
   actualizarUsuario,
   agregarUsuario,
   cambiarPassword,
-  listarUsuarios,
   faltantesSupabaseAdmin,
+  listarUsuarios,
   quitarUsuario,
   supabaseAdminDisponible,
 } from "../lib/workshop-users.js";
@@ -55,7 +56,9 @@ talleresRoutes.get("/", async (c) => {
       isActive: true,
       subscriptionStatus: true,
       createdAt: true,
-      _count: { select: { users: true } },
+      // Solo el personal: `workshop_user` también guarda a los clientes del
+      // taller con role='client', y el conteo los estaba sumando.
+      _count: { select: { users: { where: SOLO_PERSONAL } } },
     },
   });
   return c.json(talleres);
@@ -155,6 +158,7 @@ talleresRoutes.get("/:id", async (c) => {
         },
       },
       users: {
+        where: SOLO_PERSONAL,
         select: {
           id: true,
           role: true,
