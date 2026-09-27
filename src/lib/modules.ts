@@ -8,6 +8,7 @@ export const MODULOS = [
   "inventario",
   "facturacion_electronica",
   "sedes", // multi-sucursal
+  "compras", // proveedores, compras y cartera por pagar
 ] as const;
 
 export type Modulo = (typeof MODULOS)[number];
@@ -34,6 +35,7 @@ export const ETIQUETA_MODULO: Record<Modulo, string> = {
   inventario: "Inventario",
   facturacion_electronica: "Facturación electrónica (DIAN)",
   sedes: "Sedes (multi-sucursal)",
+  compras: "Compras y proveedores",
 };
 
 // Default: todos los toggleables encendidos, inventario incluido.
