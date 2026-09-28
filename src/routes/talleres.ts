@@ -3,7 +3,8 @@ import { z } from "zod";
 import { prisma } from "../lib/db.js";
 import { superadminGuard } from "../auth/middleware.js";
 import { normalizarModulos, MODULOS, ETIQUETA_MODULO, esModuloValido } from "../lib/modules.js";
-import { encryptJson } from "../lib/crypto.js";
+import { encryptJson, decryptJson } from "../lib/crypto.js";
+import { probarConexion } from "../lib/factus-probe.js";
 import {
   openwaHabilitado,
   estadoSesion,
@@ -364,8 +365,52 @@ talleresRoutes.post("/:id/whatsapp/connect", async (c) => {
   return c.json({ session, status: est.status, qr: est.qr });
 });
 
+/**
+ * La configuración sin un solo secreto adentro.
+ *
+ * Antes se devolvía `{ ...resto }` quitando a mano la clave técnica, y eso
+ * dejaba de ser seguro en el momento en que la tabla ganó columnas nuevas: el
+ * `client_secret` y la contraseña de Factus habrían salido cifrados —pero
+ * salidos— hacia el navegador. Se listan los campos que sí se publican en vez
+ * de quitar los que no, así una columna nueva no se filtra por descuido.
+ */
+function sinSecretos(cfg: NonNullable<Awaited<ReturnType<typeof prisma.workshopDianConfig.findUnique>>>) {
+  return {
+    enabled: cfg.enabled,
+    environment: cfg.environment,
+    personType: cfg.personType,
+    documentType: cfg.documentType,
+    documentNumber: cfg.documentNumber,
+    dv: cfg.dv,
+    legalName: cfg.legalName,
+    address: cfg.address,
+    city: cfg.city,
+    municipalityCode: cfg.municipalityCode,
+    department: cfg.department,
+    email: cfg.email,
+    phone: cfg.phone,
+    taxRegime: cfg.taxRegime,
+    responsibilities: cfg.responsibilities,
+    softwareId: cfg.softwareId,
+    resolutionPrefix: cfg.resolutionPrefix,
+    resolutionNumber: cfg.resolutionNumber,
+    rangeFrom: cfg.rangeFrom,
+    rangeTo: cfg.rangeTo,
+    nextInvoiceNumber: cfg.nextInvoiceNumber,
+    provider: cfg.provider,
+    providerEnvironment: cfg.providerEnvironment,
+    factusClientId: cfg.factusClientId ?? "",
+    factusUsername: cfg.factusUsername ?? "",
+    factusNumberingRangeId: cfg.factusNumberingRangeId,
+    factusSupportRangeId: cfg.factusSupportRangeId,
+    tieneClaveTecnica: Boolean(cfg.technicalKeyEncrypted),
+    tieneFactusSecret: Boolean(cfg.factusClientSecretEnc),
+    tieneFactusPassword: Boolean(cfg.factusPasswordEnc),
+  };
+}
+
 // GET /talleres/:id/dian — datos de facturación electrónica del taller.
-// La clave técnica nunca se devuelve, solo si existe.
+// Los secretos nunca se devuelven, solo si existen.
 talleresRoutes.get("/:id/dian", async (c) => {
   const id = BigInt(c.req.param("id"));
   const cfg = await prisma.workshopDianConfig.findUnique({ where: { workshopId: id } });
@@ -392,10 +437,17 @@ talleresRoutes.get("/:id/dian", async (c) => {
       rangeTo: null,
       nextInvoiceNumber: null,
       tieneClaveTecnica: false,
+      provider: "motordesk",
+      providerEnvironment: null,
+      factusClientId: "",
+      factusUsername: "",
+      factusNumberingRangeId: null,
+      factusSupportRangeId: null,
+      tieneFactusSecret: false,
+      tieneFactusPassword: false,
     });
   }
-  const { technicalKeyEncrypted, ...resto } = cfg;
-  return c.json({ ...resto, tieneClaveTecnica: Boolean(technicalKeyEncrypted) });
+  return c.json(sinSecretos(cfg));
 });
 
 // PUT /talleres/:id/dian — guarda emisor, resolución y software.
@@ -422,6 +474,18 @@ const dianSchema = z.object({
   technicalKey: z.string().trim().optional().nullable(),
   rangeFrom: z.number().int().positive().optional().nullable(),
   rangeTo: z.number().int().positive().optional().nullable(),
+
+  // Quién emite. "motordesk" es la vía directa y no transmite nada; se conserva
+  // porque los campos del emisor son los que haría falta el día que se haga.
+  provider: z.enum(["motordesk", "factus"]).default("motordesk"),
+  providerEnvironment: z.enum(["sandbox", "production"]).optional().nullable(),
+  factusClientId: z.string().trim().max(255).optional().nullable(),
+  factusUsername: z.string().trim().max(255).optional().nullable(),
+  // Vacíos = conservar los guardados, igual que la clave técnica.
+  factusClientSecret: z.string().trim().optional().nullable(),
+  factusPassword: z.string().trim().optional().nullable(),
+  factusNumberingRangeId: z.number().int().positive().optional().nullable(),
+  factusSupportRangeId: z.number().int().positive().optional().nullable(),
 });
 
 function limpiar(v: string | null | undefined): string | null {
@@ -468,6 +532,20 @@ talleresRoutes.put("/:id/dian", async (c) => {
         );
 
   const claveTecnica = limpiar(d.technicalKey);
+  const factusSecret = limpiar(d.factusClientSecret);
+  const factusPassword = limpiar(d.factusPassword);
+
+  // Si cambia cualquier cosa con la que se pide el token, el que está cacheado
+  // deja de servir. Borrarlo es obligatorio: si no, el monolito seguiría
+  // facturando con las credenciales viejas hasta que expire.
+  const cambioDeCredenciales =
+    d.provider !== current?.provider ||
+    (d.providerEnvironment ?? null) !== (current?.providerEnvironment ?? null) ||
+    limpiar(d.factusClientId) !== current?.factusClientId ||
+    limpiar(d.factusUsername) !== current?.factusUsername ||
+    factusSecret !== null ||
+    factusPassword !== null;
+
   const datos = {
     enabled,
     environment: d.environment,
@@ -490,6 +568,17 @@ talleresRoutes.put("/:id/dian", async (c) => {
     rangeFrom,
     rangeTo,
     nextInvoiceNumber,
+    provider: d.provider,
+    // El ambiente solo tiene sentido con proveedor tecnológico. Dejarlo puesto
+    // con "motordesk" haría creer que la vía directa tiene sandbox.
+    providerEnvironment: d.provider === "factus" ? d.providerEnvironment ?? "sandbox" : null,
+    factusClientId: limpiar(d.factusClientId),
+    factusUsername: limpiar(d.factusUsername),
+    factusNumberingRangeId: d.factusNumberingRangeId ?? null,
+    factusSupportRangeId: d.factusSupportRangeId ?? null,
+    ...(cambioDeCredenciales
+      ? { factusAccessToken: null, factusRefreshToken: null, factusTokenExpiresAt: null }
+      : {}),
   };
 
   try {
@@ -499,10 +588,16 @@ talleresRoutes.put("/:id/dian", async (c) => {
         workshopId: id,
         ...datos,
         technicalKeyEncrypted: claveTecnica ? encryptJson({ value: claveTecnica }) : null,
+        // Cifrados como cadena suelta, no envueltos en `{ value }`: es la forma
+        // que espera `credencialesDe` en el monolito.
+        factusClientSecretEnc: factusSecret ? encryptJson(factusSecret) : null,
+        factusPasswordEnc: factusPassword ? encryptJson(factusPassword) : null,
       },
       update: {
         ...datos,
         ...(claveTecnica ? { technicalKeyEncrypted: encryptJson({ value: claveTecnica }) } : {}),
+        ...(factusSecret ? { factusClientSecretEnc: encryptJson(factusSecret) } : {}),
+        ...(factusPassword ? { factusPasswordEnc: encryptJson(factusPassword) } : {}),
       },
     });
   } catch (e) {
@@ -510,8 +605,48 @@ talleresRoutes.put("/:id/dian", async (c) => {
   }
 
   const cfg = await prisma.workshopDianConfig.findUnique({ where: { workshopId: id } });
-  const { technicalKeyEncrypted, ...resto } = cfg!;
-  return c.json({ ...resto, tieneClaveTecnica: Boolean(technicalKeyEncrypted) });
+  return c.json(sinSecretos(cfg!));
+});
+
+// POST /talleres/:id/dian/probar — pide token a Factus y lista sus rangos.
+//
+// Se prueba **antes** de guardar: unas credenciales con un carácter de más se
+// ven bien en el formulario y fallan el día que el taller intenta facturar,
+// delante del cliente. Los campos de secreto que lleguen vacíos se reemplazan
+// por los guardados, para poder reprobar sin volver a teclearlos.
+const probarSchema = z.object({
+  providerEnvironment: z.enum(["sandbox", "production"]).default("sandbox"),
+  factusClientId: z.string().trim().optional().nullable(),
+  factusUsername: z.string().trim().optional().nullable(),
+  factusClientSecret: z.string().trim().optional().nullable(),
+  factusPassword: z.string().trim().optional().nullable(),
+});
+
+talleresRoutes.post("/:id/dian/probar", async (c) => {
+  const id = BigInt(c.req.param("id"));
+  const parsed = probarSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "Datos inválidos" }, 400);
+  const d = parsed.data;
+
+  const cfg = await prisma.workshopDianConfig.findUnique({ where: { workshopId: id } });
+
+  const clientId = limpiar(d.factusClientId) ?? cfg?.factusClientId ?? null;
+  const username = limpiar(d.factusUsername) ?? cfg?.factusUsername ?? null;
+  const clientSecret = limpiar(d.factusClientSecret) ?? decryptJson<string>(cfg?.factusClientSecretEnc);
+  const password = limpiar(d.factusPassword) ?? decryptJson<string>(cfg?.factusPasswordEnc);
+
+  if (!clientId || !username || !clientSecret || !password) {
+    return c.json({ ok: false, error: "Faltan credenciales de Factus para probar." });
+  }
+
+  const r = await probarConexion({
+    ambiente: d.providerEnvironment,
+    clientId,
+    clientSecret,
+    username,
+    password,
+  });
+  return c.json(r);
 });
 
 // Los respaldos viven en /backups (ver routes/backups.ts). Se deja el redirect

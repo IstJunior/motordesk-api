@@ -665,6 +665,26 @@ model WorkshopDianConfig {
   rangeFrom            Int?     @map("range_from")
   rangeTo              Int?     @map("range_to")
   nextInvoiceNumber    Int?     @map("next_invoice_number")
+
+  /// Quién emite ante la DIAN: "motordesk" (vía directa, que NO transmite) o
+  /// "factus". Las columnas las crea el monolito, que es el dueño de las
+  /// migraciones; acá solo se declaran para poder leerlas y escribirlas.
+  provider              String  @default("motordesk") @db.VarChar(32)
+  /// "sandbox" | "production". Solo aplica a un proveedor tecnológico.
+  providerEnvironment   String? @map("provider_environment") @db.VarChar(16)
+
+  factusClientId         String?   @map("factus_client_id") @db.VarChar(255)
+  factusClientSecretEnc  String?   @map("factus_client_secret_enc")
+  factusUsername         String?   @map("factus_username") @db.VarChar(255)
+  factusPasswordEnc      String?   @map("factus_password_enc")
+  factusNumberingRangeId Int?      @map("factus_numbering_range_id")
+  factusSupportRangeId   Int?      @map("factus_support_range_id")
+  /// Caché del token que mantiene el monolito. El panel no lo toca, pero al
+  /// cambiar credenciales hay que borrarlo o seguiría usando el viejo.
+  factusAccessToken      String?   @map("factus_access_token")
+  factusRefreshToken     String?   @map("factus_refresh_token")
+  factusTokenExpiresAt   DateTime? @map("factus_token_expires_at") @db.Timestamp(0)
+
   createdAt            DateTime @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
 
