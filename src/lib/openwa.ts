@@ -76,6 +76,12 @@ export async function iniciarSesion(nombre: string): Promise<void> {
  */
 export async function reiniciarSesion(nombre: string): Promise<void> {
   const id = await sesionId(nombre);
+
+  // `logout` borra el perfil de navegador de la sesión; es lo que antes había
+  // que hacer entrando al servidor con un `rm -rf`. Solo existe desde 0.23 y
+  // exige la sesión iniciada: sobre una caída responde 400 y no cambia nada,
+  // por eso va primero y su fallo no interrumpe.
+  await api(`/api/sessions/${id}/logout`, { method: "POST" }).catch(() => {});
   await api(`/api/sessions/${id}/force-kill`, { method: "POST" }).catch(() => {});
   await api(`/api/sessions/${id}/start`, { method: "POST" }).catch(() => {});
 }
