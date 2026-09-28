@@ -61,6 +61,44 @@ export async function iniciarSesion(nombre: string): Promise<void> {
   await api(`/api/sessions/${id}/start`, { method: "POST" }).catch(() => {});
 }
 
+/**
+ * Saca a una sesión de un bucle de caídas y la vuelve a arrancar.
+ *
+ * Cuando el navegador de una sesión se cae al inicializar, el gateway programa
+ * reconexiones **sin límite** (`Scheduling reconnect attempt N/∞`). A partir de
+ * ahí un `start` no sirve de nada: compite con la reconexión pendiente y vuelve
+ * a caer, así que el QR nunca llega a mostrarse. Le pasó a la sesión de leads y
+ * desde el panel no había forma de salir de eso.
+ *
+ * `force-kill` es lo que rompe el ciclo: cancela las reconexiones programadas,
+ * mata el Chromium atascado y deja la sesión en `disconnected`. Solo entonces
+ * un `start` arranca limpio.
+ */
+export async function reiniciarSesion(nombre: string): Promise<void> {
+  const id = await sesionId(nombre);
+  await api(`/api/sessions/${id}/force-kill`, { method: "POST" }).catch(() => {});
+  await api(`/api/sessions/${id}/start`, { method: "POST" }).catch(() => {});
+}
+
+/** Estados en los que la sesión está viva y no hay que tocarla. */
+const SANOS = new Set(["ready", "authenticating", "qr_ready"]);
+
+/**
+ * Arranca la sesión, reiniciándola de raíz si viene atascada.
+ *
+ * Pulsar "conectar" sobre una sesión en bucle no hacía nada visible, que es
+ * justo cuando uno pulsa conectar. Si está sana no se toca: un `force-kill`
+ * sobre una sesión conectada la desconectaría y tocaría volver a escanear.
+ */
+export async function conectarSesion(nombre: string): Promise<void> {
+  const { status } = await estadoSesion(nombre).catch(() => ({ status: "desconocido", qr: null }));
+  if (SANOS.has(status)) {
+    await iniciarSesion(nombre);
+    return;
+  }
+  await reiniciarSesion(nombre);
+}
+
 export async function estadoSesion(nombre: string): Promise<{ status: string; qr: string | null }> {
   const id = await sesionId(nombre);
   const s = await api<Sesion>(`/api/sessions/${id}`).catch(() => null);

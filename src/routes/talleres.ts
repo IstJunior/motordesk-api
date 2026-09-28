@@ -8,7 +8,7 @@ import { probarConexion } from "../lib/factus-probe.js";
 import {
   openwaHabilitado,
   estadoSesion,
-  iniciarSesion,
+  conectarSesion,
   registrarWebhook,
   sesionTaller,
   WEBHOOK_TOKEN,
@@ -350,7 +350,10 @@ talleresRoutes.post("/:id/whatsapp/connect", async (c) => {
   if (!openwaHabilitado()) return c.json({ error: "OpenWA no configurado" }, 503);
 
   const session = sesionTaller(w.code);
-  await iniciarSesion(session);
+  // Igual que la sesión de leads: si viene en bucle de caídas, un `start` a
+  // secas no hace nada y el QR no aparece. `conectarSesion` la reinicia de raíz
+  // solo en ese caso; si está sana no la toca.
+  await conectarSesion(session);
   if (BACKEND_URL) {
     const url = `${BACKEND_URL}/api/chat/webhook?token=${encodeURIComponent(WEBHOOK_TOKEN)}`;
     await registrarWebhook(session, url, WEBHOOK_TOKEN).catch((e) =>
