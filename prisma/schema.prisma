@@ -679,6 +679,9 @@ model WorkshopDianConfig {
   factusPasswordEnc      String?   @map("factus_password_enc")
   factusNumberingRangeId Int?      @map("factus_numbering_range_id")
   factusSupportRangeId   Int?      @map("factus_support_range_id")
+  /// El de la nota crédito, que es otro rango y que Factus exige
+  /// obligatoriamente al anular una factura.
+  factusCreditNoteRangeId Int?     @map("factus_credit_note_range_id")
   /// Caché del token que mantiene el monolito. El panel no lo toca, pero al
   /// cambiar credenciales hay que borrarlo o seguiría usando el viejo.
   factusAccessToken      String?   @map("factus_access_token")

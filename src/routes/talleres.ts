@@ -403,6 +403,7 @@ function sinSecretos(cfg: NonNullable<Awaited<ReturnType<typeof prisma.workshopD
     factusUsername: cfg.factusUsername ?? "",
     factusNumberingRangeId: cfg.factusNumberingRangeId,
     factusSupportRangeId: cfg.factusSupportRangeId,
+    factusCreditNoteRangeId: cfg.factusCreditNoteRangeId,
     tieneClaveTecnica: Boolean(cfg.technicalKeyEncrypted),
     tieneFactusSecret: Boolean(cfg.factusClientSecretEnc),
     tieneFactusPassword: Boolean(cfg.factusPasswordEnc),
@@ -443,6 +444,7 @@ talleresRoutes.get("/:id/dian", async (c) => {
       factusUsername: "",
       factusNumberingRangeId: null,
       factusSupportRangeId: null,
+      factusCreditNoteRangeId: null,
       tieneFactusSecret: false,
       tieneFactusPassword: false,
     });
@@ -486,6 +488,7 @@ const dianSchema = z.object({
   factusPassword: z.string().trim().optional().nullable(),
   factusNumberingRangeId: z.number().int().positive().optional().nullable(),
   factusSupportRangeId: z.number().int().positive().optional().nullable(),
+  factusCreditNoteRangeId: z.number().int().positive().optional().nullable(),
 });
 
 function limpiar(v: string | null | undefined): string | null {
@@ -576,6 +579,7 @@ talleresRoutes.put("/:id/dian", async (c) => {
     factusUsername: limpiar(d.factusUsername),
     factusNumberingRangeId: d.factusNumberingRangeId ?? null,
     factusSupportRangeId: d.factusSupportRangeId ?? null,
+    factusCreditNoteRangeId: d.factusCreditNoteRangeId ?? null,
     ...(cambioDeCredenciales
       ? { factusAccessToken: null, factusRefreshToken: null, factusTokenExpiresAt: null }
       : {}),
