@@ -159,7 +159,7 @@ model WorkshopUser {
 
 model Vehicle {
   id             BigInt    @id @default(autoincrement())
-  userId         BigInt    @map("user_id")
+  customerId     BigInt    @map("customer_id")
   vehicleModelId BigInt?   @map("vehicle_model_id")
   type           String    @default("car") @db.VarChar(30)
   brand          String    @db.VarChar(255)
@@ -177,13 +177,13 @@ model Vehicle {
   updatedAt      DateTime? @map("updated_at") @db.Timestamp(0)
   deletedAt      DateTime? @map("deleted_at") @db.Timestamp(0)
 
-  user         Customer      @relation("VehicleCustomer", fields: [userId], references: [id])
+  customer     Customer      @relation("VehicleCustomer", fields: [customerId], references: [id])
   vehicleModel VehicleModel? @relation(fields: [vehicleModelId], references: [id])
   appointments Appointment[]
 
   @@index([vehicleModelId])
   @@index([licensePlate])
-  @@index([userId])
+  @@index([customerId])
   @@map("vehicles")
 }
 
@@ -275,7 +275,7 @@ model InventoryMovement {
 model Appointment {
   id               BigInt    @id @default(autoincrement())
   workshopId       BigInt    @map("workshop_id")
-  userId           BigInt?   @map("user_id")
+  customerId       BigInt?   @map("customer_id")
   vehicleId        BigInt    @map("vehicle_id")
   serviceId        BigInt?   @map("service_id")
   branchId         BigInt?   @map("branch_id")
@@ -296,7 +296,7 @@ model Appointment {
   deletedAt        DateTime? @map("deleted_at") @db.Timestamp(0)
 
   workshop               Workshop               @relation(fields: [workshopId], references: [id])
-  user                   Customer?              @relation("AppointmentCustomer", fields: [userId], references: [id])
+  customer               Customer?              @relation("AppointmentCustomer", fields: [customerId], references: [id])
   vehicle                Vehicle                @relation(fields: [vehicleId], references: [id])
   service                Service?               @relation(fields: [serviceId], references: [id])
   branch                 WorkshopBranch?        @relation(fields: [branchId], references: [id])
@@ -313,7 +313,7 @@ model Appointment {
   @@index([scheduledAt])
   @@index([status])
   @@index([technicianId])
-  @@index([userId])
+  @@index([customerId])
   @@index([vehicleId])
   @@index([branchId])
   @@index([workshopId])
