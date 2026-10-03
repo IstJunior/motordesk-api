@@ -24,18 +24,21 @@ function customerId(raw: string | undefined): bigint | null {
   return raw && /^\d+$/.test(raw) ? BigInt(raw) : null;
 }
 
-function customerScope(workshopId: bigint): Prisma.UserWhereInput {
+/**
+ * Clientes del taller: le pertenecen (`customer_workshops`) o tuvieron un turno
+ * ahí, y no son parte de su personal. Es el mismo criterio que
+ * `src/lib/clientes` del monolito; los clientes ya no viven en `users`.
+ */
+async function customerScope(workshopId: bigint): Promise<Prisma.CustomerWhereInput> {
+  const personal = await prisma.workshopUser.findMany({
+    where: { workshopId, role: { not: "client" } },
+    select: { userId: true },
+  });
   return {
     deletedAt: null,
-    isSuperAdmin: false,
-    workshops: {
-      none: {
-        workshopId,
-        role: { not: "client" },
-      },
-    },
+    ...(personal.length ? { id: { notIn: personal.map((p) => p.userId) } } : {}),
     OR: [
-      { workshops: { some: { workshopId, role: "client" } } },
+      { workshops: { some: { workshopId } } },
       { appointments: { some: { workshopId, deletedAt: null } } },
     ],
   };
@@ -44,10 +47,10 @@ function customerScope(workshopId: bigint): Prisma.UserWhereInput {
 tenantCustomersRoutes.get("/", async (c) => {
   const workshop = c.get("workshop");
   const query = (c.req.query("q") ?? "").trim();
-  const customers = await prisma.user.findMany({
+  const customers = await prisma.customer.findMany({
     where: {
       AND: [
-        customerScope(workshop.id),
+        await customerScope(workshop.id),
         ...(query
           ? [{
               OR: [
@@ -111,18 +114,14 @@ tenantCustomersRoutes.get("/:id", async (c) => {
   const id = customerId(c.req.param("id"));
   if (!id) return c.json({ error: "Cliente inválido" }, 400);
 
-  const customer = await prisma.user.findFirst({
-    where: {
-      id,
-      ...customerScope(workshop.id),
-    },
+  const customer = await prisma.customer.findFirst({
+    where: { AND: [{ id }, await customerScope(workshop.id)] },
     select: {
       id: true,
       name: true,
       email: true,
       phone: true,
       createdAt: true,
-      emailVerifiedAt: true,
       vehicles: {
         where: {
           deletedAt: null,
@@ -179,7 +178,7 @@ tenantCustomersRoutes.get("/:id", async (c) => {
     email: customer.email,
     phone: customer.phone,
     createdAt: customer.createdAt,
-    emailVerifiedAt: customer.emailVerifiedAt,
+    emailVerifiedAt: null,
     vehicles: customer.vehicles,
     appointments: customer.appointments.map((appointment) => ({
       id: appointment.id,

@@ -30,8 +30,6 @@ model User {
   createdAt       DateTime? @map("created_at") @db.Timestamp(0)
   updatedAt       DateTime? @map("updated_at") @db.Timestamp(0)
 
-  vehicles                  Vehicle[]
-  appointments              Appointment[]              @relation("AppointmentUser")
   workshops                 WorkshopUser[]
   technicianAppointments    Appointment[]              @relation("AppointmentTechnician")
   payments                  Payment[]
@@ -114,6 +112,8 @@ model Workshop {
   @@index([isActive])
   @@index([workshopType])
   @@index([slug])
+  customers CustomerWorkshop[]
+
   @@map("workshops")
 }
 
@@ -177,7 +177,7 @@ model Vehicle {
   updatedAt      DateTime? @map("updated_at") @db.Timestamp(0)
   deletedAt      DateTime? @map("deleted_at") @db.Timestamp(0)
 
-  user         User          @relation(fields: [userId], references: [id])
+  user         Customer      @relation("VehicleCustomer", fields: [userId], references: [id])
   vehicleModel VehicleModel? @relation(fields: [vehicleModelId], references: [id])
   appointments Appointment[]
 
@@ -296,7 +296,7 @@ model Appointment {
   deletedAt        DateTime? @map("deleted_at") @db.Timestamp(0)
 
   workshop               Workshop               @relation(fields: [workshopId], references: [id])
-  user                   User?                  @relation("AppointmentUser", fields: [userId], references: [id])
+  user                   Customer?              @relation("AppointmentCustomer", fields: [userId], references: [id])
   vehicle                Vehicle                @relation(fields: [vehicleId], references: [id])
   service                Service?               @relation(fields: [serviceId], references: [id])
   branch                 WorkshopBranch?        @relation(fields: [branchId], references: [id])
@@ -1311,4 +1311,44 @@ model WorkshopInvite {
   @@index([workshopId])
   @@index([createdById])
   @@map("workshop_invites")
+}
+
+/// Un cliente de MotorDesk: la persona, no su cuenta. Comparte id con su
+/// cuenta de `users` si la tiene. La tabla la crea y migra el monolito
+/// (docs/plan-tabla-de-clientes.md); aquí solo se lee.
+model Customer {
+  id             BigInt    @id @default(dbgenerated("nextval('users_id_seq'::regclass)"))
+  name           String    @db.VarChar(255)
+  email          String?   @db.VarChar(255)
+  phone          String?   @db.VarChar(32)
+  documentType   String?   @map("document_type") @db.VarChar(16)
+  documentNumber String?   @unique @map("document_number") @db.VarChar(32)
+  city           String?   @db.VarChar(120)
+  userId         BigInt?   @unique @map("user_id")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(0)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamp(0)
+
+  workshops    CustomerWorkshop[]
+  vehicles     Vehicle[]          @relation("VehicleCustomer")
+  appointments Appointment[]      @relation("AppointmentCustomer")
+
+  @@index([phone])
+  @@index([name])
+  @@map("customers")
+}
+
+model CustomerWorkshop {
+  id         BigInt   @id @default(autoincrement())
+  customerId BigInt   @map("customer_id")
+  workshopId BigInt   @map("workshop_id")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, workshopId])
+  @@index([workshopId])
+  @@map("customer_workshops")
 }
