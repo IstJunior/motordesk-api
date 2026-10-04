@@ -457,7 +457,9 @@ talleresRoutes.get("/:id/dian", async (c) => {
 
 // PUT /talleres/:id/dian — guarda emisor, resolución y software.
 const textoOpcional = z.string().trim().max(255).optional().nullable();
-const dianSchema = z.object({
+
+// Lo que es igual sea quien sea el que emite: emisor, resolución y software.
+const dianComun = z.object({
   environment: z.enum(["habilitacion", "produccion"]).default("habilitacion"),
   personType: z.enum(["natural", "juridica"]).default("juridica"),
   documentType: z.string().trim().max(16).default("31"),
@@ -479,20 +481,35 @@ const dianSchema = z.object({
   technicalKey: z.string().trim().optional().nullable(),
   rangeFrom: z.number().int().positive().optional().nullable(),
   rangeTo: z.number().int().positive().optional().nullable(),
-
-  // Quién emite. "motordesk" es la vía directa y no transmite nada; se conserva
-  // porque los campos del emisor son los que haría falta el día que se haga.
-  provider: z.enum(["motordesk", "factus"]).default("motordesk"),
-  providerEnvironment: z.enum(["sandbox", "production"]).optional().nullable(),
-  factusClientId: z.string().trim().max(255).optional().nullable(),
-  factusUsername: z.string().trim().max(255).optional().nullable(),
-  // Vacíos = conservar los guardados, igual que la clave técnica.
-  factusClientSecret: z.string().trim().optional().nullable(),
-  factusPassword: z.string().trim().optional().nullable(),
-  factusNumberingRangeId: z.number().int().positive().optional().nullable(),
-  factusSupportRangeId: z.number().int().positive().optional().nullable(),
-  factusCreditNoteRangeId: z.number().int().positive().optional().nullable(),
 });
+
+// Quién emite. Cada proveedor declara sus propios campos: con un esquema plano
+// cualquier combinación pasaba, y una configuración a medias se descubría el
+// día que el taller intentaba facturar, delante del cliente.
+const dianSchema = z.discriminatedUnion("provider", [
+  // La vía directa no transmite nada; se conserva porque los campos del emisor
+  // son los que haría falta el día que se haga.
+  dianComun.extend({ provider: z.literal("motordesk") }),
+  dianComun.extend({
+    provider: z.literal("factus"),
+    providerEnvironment: z.enum(["sandbox", "production"]).default("sandbox"),
+    factusClientId: z.string().trim().max(255).optional().nullable(),
+    factusUsername: z.string().trim().max(255).optional().nullable(),
+    // Vacíos = conservar los guardados, igual que la clave técnica.
+    factusClientSecret: z.string().trim().optional().nullable(),
+    factusPassword: z.string().trim().optional().nullable(),
+    factusNumberingRangeId: z.number().int().positive().optional().nullable(),
+    factusSupportRangeId: z.number().int().positive().optional().nullable(),
+    factusCreditNoteRangeId: z.number().int().positive().optional().nullable(),
+  }),
+]);
+
+/** "factusNumberingRangeId: Expected number, received string" — que se sepa cuál campo. */
+function primerError(e: z.ZodError): string {
+  const i = e.issues[0];
+  if (!i) return "Datos inválidos";
+  return i.path.length > 0 ? `${i.path.join(".")}: ${i.message}` : i.message;
+}
 
 function limpiar(v: string | null | undefined): string | null {
   const s = (v ?? "").trim();
@@ -501,9 +518,15 @@ function limpiar(v: string | null | undefined): string | null {
 
 talleresRoutes.put("/:id/dian", async (c) => {
   const id = BigInt(c.req.param("id"));
-  const parsed = dianSchema.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: "Datos inválidos" }, 400);
+  const cuerpo = await c.req.json().catch(() => null);
+  // Sin proveedor es la vía directa, como antes de que el esquema se partiera.
+  const parsed = dianSchema.safeParse(
+    cuerpo && typeof cuerpo === "object" && !("provider" in cuerpo) ? { ...cuerpo, provider: "motordesk" } : cuerpo,
+  );
+  if (!parsed.success) return c.json({ error: primerError(parsed.error) }, 400);
   const d = parsed.data;
+  // Los campos de Factus solo existen si se eligió Factus.
+  const fx = d.provider === "factus" ? d : null;
 
   const rangeFrom = d.rangeFrom ?? null;
   const rangeTo = d.rangeTo ?? null;
@@ -521,6 +544,28 @@ talleresRoutes.put("/:id/dian", async (c) => {
   const current = await prisma.workshopDianConfig.findUnique({ where: { workshopId: id } });
   const resolutionPrefix = limpiar(d.resolutionPrefix);
 
+  const claveTecnica = limpiar(d.technicalKey);
+  const factusSecret = limpiar(fx?.factusClientSecret);
+  const factusPassword = limpiar(fx?.factusPassword);
+
+  // Lo mismo que el panel exige antes de habilitar "Guardar", repetido acá
+  // porque el panel no es el único que puede llamar. Un secreto vacío vale si
+  // ya hay uno guardado: vacío significa conservarlo.
+  if (fx) {
+    const faltan = [
+      !limpiar(fx.factusClientId) && "Client ID",
+      !factusSecret && !current?.factusClientSecretEnc && "Client secret",
+      !limpiar(fx.factusUsername) && "Usuario (correo)",
+      !factusPassword && !current?.factusPasswordEnc && "Contraseña",
+      !fx.factusNumberingRangeId && "Rango para facturas de venta",
+      // Sin él la caja no puede anular una venta facturada: Factus lo exige.
+      !fx.factusCreditNoteRangeId && "Rango para notas crédito",
+    ].filter((x): x is string => Boolean(x));
+    if (faltan.length > 0) {
+      return c.json({ error: `Para facturar por Factus falta: ${faltan.join(", ")}.` }, 400);
+    }
+  }
+
   // La numeración nunca retrocede: con prefijo nuevo arranca en el rango
   // declarado; con el mismo prefijo continúa tras el último documento emitido.
   const lastDocument = await prisma.dianElectronicDocument.findFirst({
@@ -537,20 +582,17 @@ talleresRoutes.put("/:id/dian", async (c) => {
           (lastDocument?.number ?? 0) + 1,
         );
 
-  const claveTecnica = limpiar(d.technicalKey);
-  const factusSecret = limpiar(d.factusClientSecret);
-  const factusPassword = limpiar(d.factusPassword);
-
   // Si cambia cualquier cosa con la que se pide el token, el que está cacheado
   // deja de servir. Borrarlo es obligatorio: si no, el monolito seguiría
   // facturando con las credenciales viejas hasta que expire.
   const cambioDeCredenciales =
     d.provider !== current?.provider ||
-    (d.providerEnvironment ?? null) !== (current?.providerEnvironment ?? null) ||
-    limpiar(d.factusClientId) !== current?.factusClientId ||
-    limpiar(d.factusUsername) !== current?.factusUsername ||
-    factusSecret !== null ||
-    factusPassword !== null;
+    (fx !== null &&
+      (fx.providerEnvironment !== (current?.providerEnvironment ?? null) ||
+        limpiar(fx.factusClientId) !== current?.factusClientId ||
+        limpiar(fx.factusUsername) !== current?.factusUsername ||
+        factusSecret !== null ||
+        factusPassword !== null));
 
   const datos = {
     enabled,
@@ -577,12 +619,18 @@ talleresRoutes.put("/:id/dian", async (c) => {
     provider: d.provider,
     // El ambiente solo tiene sentido con proveedor tecnológico. Dejarlo puesto
     // con "motordesk" haría creer que la vía directa tiene sandbox.
-    providerEnvironment: d.provider === "factus" ? d.providerEnvironment ?? "sandbox" : null,
-    factusClientId: limpiar(d.factusClientId),
-    factusUsername: limpiar(d.factusUsername),
-    factusNumberingRangeId: d.factusNumberingRangeId ?? null,
-    factusSupportRangeId: d.factusSupportRangeId ?? null,
-    factusCreditNoteRangeId: d.factusCreditNoteRangeId ?? null,
+    providerEnvironment: fx ? fx.providerEnvironment : null,
+    // Pasar a otro proveedor no borra lo de Factus: volver no obliga a pedirle
+    // las credenciales al taller otra vez. Solo se escriben si se eligió Factus.
+    ...(fx
+      ? {
+          factusClientId: limpiar(fx.factusClientId),
+          factusUsername: limpiar(fx.factusUsername),
+          factusNumberingRangeId: fx.factusNumberingRangeId ?? null,
+          factusSupportRangeId: fx.factusSupportRangeId ?? null,
+          factusCreditNoteRangeId: fx.factusCreditNoteRangeId ?? null,
+        }
+      : {}),
     ...(cambioDeCredenciales
       ? { factusAccessToken: null, factusRefreshToken: null, factusTokenExpiresAt: null }
       : {}),
