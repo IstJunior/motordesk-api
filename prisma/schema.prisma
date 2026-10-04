@@ -666,11 +666,12 @@ model WorkshopDianConfig {
   rangeTo              Int?     @map("range_to")
   nextInvoiceNumber    Int?     @map("next_invoice_number")
 
-  /// Quién emite ante la DIAN: "motordesk" (vía directa, que NO transmite) o
-  /// "factus". Las columnas las crea el monolito, que es el dueño de las
+  /// Quién emite ante la DIAN: "motordesk" (vía directa, que NO transmite),
+  /// "factus" o "nextpyme". Las columnas las crea el monolito, que es el dueño de las
   /// migraciones; acá solo se declaran para poder leerlas y escribirlas.
   provider              String  @default("motordesk") @db.VarChar(32)
-  /// "sandbox" | "production". Solo aplica a un proveedor tecnológico.
+  /// "sandbox" | "production" (Factus), "habilitacion" | "production"
+  /// (Nextpyme). Solo aplica a un proveedor tecnológico.
   providerEnvironment   String? @map("provider_environment") @db.VarChar(16)
 
   factusClientId         String?   @map("factus_client_id") @db.VarChar(255)
@@ -687,6 +688,27 @@ model WorkshopDianConfig {
   factusAccessToken      String?   @map("factus_access_token")
   factusRefreshToken     String?   @map("factus_refresh_token")
   factusTokenExpiresAt   DateTime? @map("factus_token_expires_at") @db.Timestamp(0)
+
+  // --- Nextpyme ---
+  /// La URL de su API: la de producción o la de habilitación, que Nextpyme
+  /// entrega aparte. No tiene sandbox público, así que el ambiente lo decide
+  /// el par URL + token que se pegue.
+  nextpymeBaseUrl        String?   @map("nextpyme_base_url") @db.VarChar(255)
+  /// Bearer fijo, cifrado como los secretos de Factus.
+  nextpymeTokenEnc       String?   @map("nextpyme_token_enc")
+  /// Solo en habilitación: el set de pruebas que asigna la DIAN.
+  nextpymeTestSetId      String?   @map("nextpyme_test_set_id") @db.VarChar(64)
+
+  /// Numeración de notas crédito cuando la pone MotorDesk (Nextpyme). Con
+  /// Factus la pone el rango elegido y estas quedan vacías.
+  creditNotePrefix       String?   @map("credit_note_prefix") @db.VarChar(32)
+  nextCreditNoteNumber   Int?      @map("next_credit_note_number")
+
+  /// Lo que el proveedor reportó en su última respuesta, para avisar antes de
+  /// que el certificado o la resolución se venzan.
+  providerCertificateDaysLeft Int?      @map("provider_certificate_days_left")
+  providerResolutionDaysLeft  Int?      @map("provider_resolution_days_left")
+  providerCheckedAt           DateTime? @map("provider_checked_at") @db.Timestamp(0)
 
   createdAt            DateTime @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamp(0)

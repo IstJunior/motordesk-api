@@ -5,6 +5,7 @@ import { superadminGuard } from "../auth/middleware.js";
 import { normalizarModulos, MODULOS, ETIQUETA_MODULO, esModuloValido } from "../lib/modules.js";
 import { encryptJson, decryptJson } from "../lib/crypto.js";
 import { probarConexion } from "../lib/factus-probe.js";
+import { probarConexionNextpyme } from "../lib/nextpyme-probe.js";
 import {
   openwaHabilitado,
   estadoSesion,
@@ -410,6 +411,13 @@ function sinSecretos(cfg: NonNullable<Awaited<ReturnType<typeof prisma.workshopD
     tieneClaveTecnica: Boolean(cfg.technicalKeyEncrypted),
     tieneFactusSecret: Boolean(cfg.factusClientSecretEnc),
     tieneFactusPassword: Boolean(cfg.factusPasswordEnc),
+    nextpymeBaseUrl: cfg.nextpymeBaseUrl,
+    nextpymeTestSetId: cfg.nextpymeTestSetId,
+    tieneNextpymeToken: Boolean(cfg.nextpymeTokenEnc),
+    creditNotePrefix: cfg.creditNotePrefix,
+    nextCreditNoteNumber: cfg.nextCreditNoteNumber,
+    providerCertificateDaysLeft: cfg.providerCertificateDaysLeft,
+    providerResolutionDaysLeft: cfg.providerResolutionDaysLeft,
   };
 }
 
@@ -450,6 +458,13 @@ talleresRoutes.get("/:id/dian", async (c) => {
       factusCreditNoteRangeId: null,
       tieneFactusSecret: false,
       tieneFactusPassword: false,
+      nextpymeBaseUrl: null,
+      nextpymeTestSetId: null,
+      tieneNextpymeToken: false,
+      creditNotePrefix: null,
+      nextCreditNoteNumber: null,
+      providerCertificateDaysLeft: null,
+      providerResolutionDaysLeft: null,
     });
   }
   return c.json(sinSecretos(cfg));
@@ -481,6 +496,8 @@ const dianComun = z.object({
   technicalKey: z.string().trim().optional().nullable(),
   rangeFrom: z.number().int().positive().optional().nullable(),
   rangeTo: z.number().int().positive().optional().nullable(),
+  // El próximo número, si se pide uno. Nunca retrocede: ver el PUT.
+  nextInvoiceNumber: z.number().int().positive().optional().nullable(),
 });
 
 // Quién emite. Cada proveedor declara sus propios campos: con un esquema plano
@@ -501,6 +518,18 @@ const dianSchema = z.discriminatedUnion("provider", [
     factusNumberingRangeId: z.number().int().positive().optional().nullable(),
     factusSupportRangeId: z.number().int().positive().optional().nullable(),
     factusCreditNoteRangeId: z.number().int().positive().optional().nullable(),
+  }),
+  // Nextpyme: una URL y un token. Lo demás que pide —emisor y numeración— es
+  // común, porque con Nextpyme el número lo pone MotorDesk.
+  dianComun.extend({
+    provider: z.literal("nextpyme"),
+    providerEnvironment: z.enum(["habilitacion", "production"]).default("habilitacion"),
+    nextpymeBaseUrl: z.string().trim().max(255).optional().nullable(),
+    // Vacío = conservar el guardado.
+    nextpymeToken: z.string().trim().optional().nullable(),
+    nextpymeTestSetId: z.string().trim().max(64).optional().nullable(),
+    creditNotePrefix: z.string().trim().max(32).optional().nullable(),
+    nextCreditNoteNumber: z.number().int().positive().optional().nullable(),
   }),
 ]);
 
@@ -525,8 +554,9 @@ talleresRoutes.put("/:id/dian", async (c) => {
   );
   if (!parsed.success) return c.json({ error: primerError(parsed.error) }, 400);
   const d = parsed.data;
-  // Los campos de Factus solo existen si se eligió Factus.
+  // Los campos de cada proveedor solo existen si se eligió ese proveedor.
   const fx = d.provider === "factus" ? d : null;
+  const nx = d.provider === "nextpyme" ? d : null;
 
   const rangeFrom = d.rangeFrom ?? null;
   const rangeTo = d.rangeTo ?? null;
@@ -547,6 +577,8 @@ talleresRoutes.put("/:id/dian", async (c) => {
   const claveTecnica = limpiar(d.technicalKey);
   const factusSecret = limpiar(fx?.factusClientSecret);
   const factusPassword = limpiar(fx?.factusPassword);
+  const nextpymeToken = limpiar(nx?.nextpymeToken);
+  const nextpymeBaseUrl = limpiar(nx?.nextpymeBaseUrl)?.replace(/\/+$/, "") ?? null;
 
   // Lo mismo que el panel exige antes de habilitar "Guardar", repetido acá
   // porque el panel no es el único que puede llamar. Un secreto vacío vale si
@@ -565,6 +597,27 @@ talleresRoutes.put("/:id/dian", async (c) => {
       return c.json({ error: `Para facturar por Factus falta: ${faltan.join(", ")}.` }, 400);
     }
   }
+  if (nx) {
+    const faltan = [
+      !nextpymeBaseUrl && "URL de la API",
+      !nextpymeToken && !current?.nextpymeTokenEnc && "Token",
+      !limpiar(d.documentNumber) && "NIT del emisor",
+      !limpiar(d.legalName) && "Razón social",
+      !limpiar(d.resolutionNumber) && "Nº resolución",
+      rangeFrom === null && "Rango desde",
+      rangeTo === null && "Rango hasta",
+      // Sin ellos la caja no puede anular una venta facturada.
+      !limpiar(nx.creditNotePrefix) && "Prefijo de nota crédito",
+      !nx.nextCreditNoteNumber && "Próximo número de nota crédito",
+    ].filter((x): x is string => Boolean(x));
+    if (faltan.length > 0) {
+      return c.json({ error: `Para facturar por Nextpyme falta: ${faltan.join(", ")}.` }, 400);
+    }
+    // El token viaja en cada factura: por http iría en claro.
+    if (!/^https:\/\//i.test(nextpymeBaseUrl!)) {
+      return c.json({ error: "La URL de la API de Nextpyme tiene que empezar con https://." }, 400);
+    }
+  }
 
   // La numeración nunca retrocede: con prefijo nuevo arranca en el rango
   // declarado; con el mismo prefijo continúa tras el último documento emitido.
@@ -573,14 +626,30 @@ talleresRoutes.put("/:id/dian", async (c) => {
     orderBy: { number: "desc" },
     select: { number: true },
   });
+  // Un próximo número pedido a mano sirve para continuar una resolución que
+  // el taller ya venía usando en otro sistema; igual nunca retrocede.
   const nextInvoiceNumber =
     rangeFrom === null
       ? current?.nextInvoiceNumber ?? null
       : Math.max(
           rangeFrom,
+          d.nextInvoiceNumber ?? 0,
           current?.resolutionPrefix === resolutionPrefix ? current?.nextInvoiceNumber ?? 0 : 0,
           (lastDocument?.number ?? 0) + 1,
         );
+  if (nextInvoiceNumber !== null && rangeTo !== null && nextInvoiceNumber > rangeTo + 1) {
+    return c.json({ error: `El próximo número (${nextInvoiceNumber}) queda fuera del rango, que llega a ${rangeTo}.` }, 400);
+  }
+
+  // Lo mismo con las notas crédito: con el mismo prefijo, no se vuelve a un
+  // número ya usado.
+  const creditNotePrefix = limpiar(nx?.creditNotePrefix);
+  const nextCreditNoteNumber = nx
+    ? Math.max(
+        nx.nextCreditNoteNumber ?? 1,
+        current?.creditNotePrefix === creditNotePrefix ? current?.nextCreditNoteNumber ?? 0 : 0,
+      )
+    : null;
 
   // Si cambia cualquier cosa con la que se pide el token, el que está cacheado
   // deja de servir. Borrarlo es obligatorio: si no, el monolito seguiría
@@ -619,7 +688,7 @@ talleresRoutes.put("/:id/dian", async (c) => {
     provider: d.provider,
     // El ambiente solo tiene sentido con proveedor tecnológico. Dejarlo puesto
     // con "motordesk" haría creer que la vía directa tiene sandbox.
-    providerEnvironment: fx ? fx.providerEnvironment : null,
+    providerEnvironment: fx ? fx.providerEnvironment : nx ? nx.providerEnvironment : null,
     // Pasar a otro proveedor no borra lo de Factus: volver no obliga a pedirle
     // las credenciales al taller otra vez. Solo se escriben si se eligió Factus.
     ...(fx
@@ -629,6 +698,15 @@ talleresRoutes.put("/:id/dian", async (c) => {
           factusNumberingRangeId: fx.factusNumberingRangeId ?? null,
           factusSupportRangeId: fx.factusSupportRangeId ?? null,
           factusCreditNoteRangeId: fx.factusCreditNoteRangeId ?? null,
+        }
+      : {}),
+    // Igual con Nextpyme: pasar a otro proveedor no borra su URL ni su token.
+    ...(nx
+      ? {
+          nextpymeBaseUrl,
+          nextpymeTestSetId: limpiar(nx.nextpymeTestSetId),
+          creditNotePrefix,
+          nextCreditNoteNumber,
         }
       : {}),
     ...(cambioDeCredenciales
@@ -647,12 +725,15 @@ talleresRoutes.put("/:id/dian", async (c) => {
         // que espera `credencialesDe` en el monolito.
         factusClientSecretEnc: factusSecret ? encryptJson(factusSecret) : null,
         factusPasswordEnc: factusPassword ? encryptJson(factusPassword) : null,
+        // Cadena suelta, como los de Factus: es lo que espera el monolito.
+        nextpymeTokenEnc: nextpymeToken ? encryptJson(nextpymeToken) : null,
       },
       update: {
         ...datos,
         ...(claveTecnica ? { technicalKeyEncrypted: encryptJson({ value: claveTecnica }) } : {}),
         ...(factusSecret ? { factusClientSecretEnc: encryptJson(factusSecret) } : {}),
         ...(factusPassword ? { factusPasswordEnc: encryptJson(factusPassword) } : {}),
+        ...(nextpymeToken ? { nextpymeTokenEnc: encryptJson(nextpymeToken) } : {}),
       },
     });
   } catch (e) {
@@ -663,27 +744,50 @@ talleresRoutes.put("/:id/dian", async (c) => {
   return c.json(sinSecretos(cfg!));
 });
 
-// POST /talleres/:id/dian/probar — pide token a Factus y lista sus rangos.
+// POST /talleres/:id/dian/probar — Factus: pide token y lista sus rangos.
+// Nextpyme: valida el token y coteja el catálogo de unidades.
 //
 // Se prueba **antes** de guardar: unas credenciales con un carácter de más se
 // ven bien en el formulario y fallan el día que el taller intenta facturar,
 // delante del cliente. Los campos de secreto que lleguen vacíos se reemplazan
 // por los guardados, para poder reprobar sin volver a teclearlos.
-const probarSchema = z.object({
-  providerEnvironment: z.enum(["sandbox", "production"]).default("sandbox"),
-  factusClientId: z.string().trim().optional().nullable(),
-  factusUsername: z.string().trim().optional().nullable(),
-  factusClientSecret: z.string().trim().optional().nullable(),
-  factusPassword: z.string().trim().optional().nullable(),
-});
+const probarSchema = z.discriminatedUnion("provider", [
+  z.object({
+    provider: z.literal("factus"),
+    providerEnvironment: z.enum(["sandbox", "production"]).default("sandbox"),
+    factusClientId: z.string().trim().optional().nullable(),
+    factusUsername: z.string().trim().optional().nullable(),
+    factusClientSecret: z.string().trim().optional().nullable(),
+    factusPassword: z.string().trim().optional().nullable(),
+  }),
+  z.object({
+    provider: z.literal("nextpyme"),
+    nextpymeBaseUrl: z.string().trim().optional().nullable(),
+    nextpymeToken: z.string().trim().optional().nullable(),
+  }),
+]);
 
 talleresRoutes.post("/:id/dian/probar", async (c) => {
   const id = BigInt(c.req.param("id"));
-  const parsed = probarSchema.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: "Datos inválidos" }, 400);
+  const cuerpo = await c.req.json().catch(() => null);
+  // Sin proveedor es Factus, que era el único que se probaba.
+  const parsed = probarSchema.safeParse(
+    cuerpo && typeof cuerpo === "object" && !("provider" in cuerpo) ? { ...cuerpo, provider: "factus" } : cuerpo,
+  );
+  if (!parsed.success) return c.json({ error: primerError(parsed.error) }, 400);
   const d = parsed.data;
 
   const cfg = await prisma.workshopDianConfig.findUnique({ where: { workshopId: id } });
+
+  if (d.provider === "nextpyme") {
+    const baseUrl = limpiar(d.nextpymeBaseUrl) ?? cfg?.nextpymeBaseUrl ?? null;
+    const token = limpiar(d.nextpymeToken) ?? decryptJson<string>(cfg?.nextpymeTokenEnc);
+    if (!baseUrl || !token) return c.json({ ok: false, error: "Faltan la URL o el token de Nextpyme para probar." });
+    if (!/^https:\/\//i.test(baseUrl)) {
+      return c.json({ ok: false, error: "La URL de la API de Nextpyme tiene que empezar con https://." });
+    }
+    return c.json(await probarConexionNextpyme({ baseUrl, token }));
+  }
 
   const clientId = limpiar(d.factusClientId) ?? cfg?.factusClientId ?? null;
   const username = limpiar(d.factusUsername) ?? cfg?.factusUsername ?? null;
