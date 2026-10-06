@@ -15,9 +15,13 @@ RUN npm run build
 FROM node:22-slim
 WORKDIR /app
 ENV NODE_ENV=production
-# postgresql-client-17 (repo pgdg): pg_dump/pg_restore para los respaldos.
-# La 17 es más nueva que el servidor de Supabase y pg_dump es compatible hacia
-# atrás, así que sirve aunque la base sea 15 o 16.
+# postgresql-client-18 (repo pgdg): pg_dump/pg_restore para los respaldos.
+#
+# Tiene que ser de la MISMA versión mayor que el servidor de producción o más
+# nueva: pg_dump lee bases más viejas, pero se niega a respaldar una más nueva
+# ("server version mismatch"). La base pasó a Postgres 18 el 2026-09-22 y con el
+# cliente 17 el respaldo diario falló en silencio 13 noches seguidas. Si la base
+# sube de versión otra vez, esta línea sube con ella.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates curl gnupg \
   && install -d /usr/share/postgresql-common/pgdg \
@@ -26,7 +30,7 @@ RUN apt-get update \
   && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
        > /etc/apt/sources.list.d/pgdg.list \
   && apt-get update \
-  && apt-get install -y --no-install-recommends postgresql-client-17 \
+  && apt-get install -y --no-install-recommends postgresql-client-18 \
   && apt-get purge -y curl gnupg && apt-get autoremove -y \
   && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/node_modules ./node_modules
