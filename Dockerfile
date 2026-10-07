@@ -15,6 +15,12 @@ RUN npm run build
 FROM node:22-slim
 WORKDIR /app
 ENV NODE_ENV=production
+# La hora del taller, igual que el contenedor de la app (motordesk/Dockerfile).
+# Sin esto el proceso corre en UTC y cualquier `getHours()`, `toLocaleString()`
+# sin zona o fecha construida desde texto queda cinco horas corrida respecto de
+# lo que ve el taller. Node trae los datos de zonas en su ICU: no hace falta
+# instalar tzdata (comprobado en node:22-slim).
+ENV TZ=America/Bogota
 # postgresql-client-18 (repo pgdg): pg_dump/pg_restore para los respaldos.
 #
 # Tiene que ser de la MISMA versión mayor que el servidor de producción o más

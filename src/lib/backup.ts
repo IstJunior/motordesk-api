@@ -324,6 +324,14 @@ export async function restaurarTaller(
   try {
     await prisma.$transaction(
       async (tx) => {
+      // 0) Las fechas sin zona del JSON se leen como UTC. Los respaldos hechos
+      // cuando las columnas eran `timestamp without time zone` traen el instante
+      // en UTC sin decirlo ("2026-10-07T22:00:00"); al reinsertarlos en
+      // `timestamptz`, Postgres les pone la zona de la sesión, y con la base en
+      // hora de Bogotá quedarían cinco horas corridos. Los respaldos nuevos
+      // traen la zona escrita y esto no los afecta. Solo dura la transacción.
+      await tx.$executeRawUnsafe("SET LOCAL timezone TO 'UTC'");
+
       // 1) Referencias globales primero: las filas propias apuntan a ellas.
       for (const r of datos.referencias) {
         const insertadas = await insertar(tx, r, true);
