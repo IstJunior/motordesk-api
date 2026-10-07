@@ -22,13 +22,13 @@ model User {
   name            String    @db.VarChar(255)
   email           String    @unique @db.VarChar(255)
   phone           String?   @db.VarChar(32)
-  emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamp(0)
+  emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz(0)
   password        String    @db.VarChar(255)
   rememberToken   String?   @map("remember_token") @db.VarChar(100)
   isSuperAdmin    Boolean   @default(false) @map("is_super_admin")
   deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
-  createdAt       DateTime? @map("created_at") @db.Timestamp(0)
-  updatedAt       DateTime? @map("updated_at") @db.Timestamp(0)
+  createdAt       DateTime? @map("created_at") @db.Timestamptz(0)
+  updatedAt       DateTime? @map("updated_at") @db.Timestamptz(0)
 
   workshops                 WorkshopUser[]
   technicianAppointments    Appointment[]              @relation("AppointmentTechnician")
@@ -75,11 +75,11 @@ model Workshop {
   whatsappSession    String?   @map("whatsapp_session") @db.VarChar(64)
   whatsappStatus     String?   @map("whatsapp_status") @db.VarChar(32)
   isActive           Boolean   @default(true) @map("is_active")
-  trialEndsAt        DateTime? @map("trial_ends_at") @db.Timestamp(0)
+  trialEndsAt        DateTime? @map("trial_ends_at") @db.Timestamptz(0)
   subscriptionStatus String    @default("trial") @map("subscription_status") @db.VarChar(255)
-  createdAt          DateTime? @map("created_at") @db.Timestamp(0)
-  updatedAt          DateTime? @map("updated_at") @db.Timestamp(0)
-  deletedAt          DateTime? @map("deleted_at") @db.Timestamp(0)
+  createdAt          DateTime? @map("created_at") @db.Timestamptz(0)
+  updatedAt          DateTime? @map("updated_at") @db.Timestamptz(0)
+  deletedAt          DateTime? @map("deleted_at") @db.Timestamptz(0)
 
   users                        WorkshopUser[]
   theme                        WorkshopTheme?
@@ -129,9 +129,9 @@ model WorkshopBranch {
   isPrimary  Boolean   @default(false) @map("is_primary")
   isActive   Boolean   @default(true) @map("is_active")
   sortOrder  Int       @default(0) @map("sort_order")
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
-  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
-  deletedAt  DateTime? @map("deleted_at") @db.Timestamp(0)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(0)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(0)
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz(0)
 
   workshop     Workshop      @relation(fields: [workshopId], references: [id], onDelete: Cascade)
   appointments Appointment[]
@@ -147,8 +147,8 @@ model WorkshopUser {
   userId     BigInt    @map("user_id")
   role       String    @default("client") @db.VarChar(255)
   isOwner    Boolean   @default(false) @map("is_owner")
-  createdAt  DateTime? @map("created_at") @db.Timestamp(0)
-  updatedAt  DateTime? @map("updated_at") @db.Timestamp(0)
+  createdAt  DateTime? @map("created_at") @db.Timestamptz(0)
+  updatedAt  DateTime? @map("updated_at") @db.Timestamptz(0)
 
   workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -173,9 +173,9 @@ model Vehicle {
   transmission   String?   @db.VarChar(255)
   notes          String?
   isActive       Boolean   @default(true) @map("is_active")
-  createdAt      DateTime? @map("created_at") @db.Timestamp(0)
-  updatedAt      DateTime? @map("updated_at") @db.Timestamp(0)
-  deletedAt      DateTime? @map("deleted_at") @db.Timestamp(0)
+  createdAt      DateTime? @map("created_at") @db.Timestamptz(0)
+  updatedAt      DateTime? @map("updated_at") @db.Timestamptz(0)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(0)
 
   customer     Customer      @relation("VehicleCustomer", fields: [customerId], references: [id])
   vehicleModel VehicleModel? @relation(fields: [vehicleModelId], references: [id])
@@ -203,9 +203,9 @@ model Service {
   priceEscooter   Decimal?  @map("price_escooter") @db.Decimal(10, 2)
   pricePickup     Decimal?  @map("price_pickup") @db.Decimal(10, 2)
   isActive        Boolean   @default(true) @map("is_active")
-  createdAt       DateTime? @map("created_at") @db.Timestamp(0)
-  updatedAt       DateTime? @map("updated_at") @db.Timestamp(0)
-  deletedAt       DateTime? @map("deleted_at") @db.Timestamp(0)
+  createdAt       DateTime? @map("created_at") @db.Timestamptz(0)
+  updatedAt       DateTime? @map("updated_at") @db.Timestamptz(0)
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(0)
 
   workshop            Workshop             @relation(fields: [workshopId], references: [id])
   appointments        Appointment[]
@@ -234,9 +234,9 @@ model InventoryItem {
   assignedTo       String?   @map("assigned_to") @db.VarChar(180)
   acquiredAt       DateTime? @map("acquired_at") @db.Date
   isActive         Boolean   @default(true) @map("is_active")
-  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
-  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
-  deletedAt        DateTime? @map("deleted_at") @db.Timestamp(0)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(0)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(0)
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamptz(0)
 
   workshop  Workshop            @relation(fields: [workshopId], references: [id], onDelete: Cascade)
   movements InventoryMovement[]
@@ -260,7 +260,7 @@ model InventoryMovement {
   note        String?
   stockBefore Decimal  @map("stock_before") @db.Decimal(12, 3)
   stockAfter  Decimal  @map("stock_after") @db.Decimal(12, 3)
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(0)
 
   workshop  Workshop      @relation(fields: [workshopId], references: [id], onDelete: Cascade)
   item      InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
@@ -280,10 +280,10 @@ model Appointment {
   serviceId        BigInt?   @map("service_id")
   branchId         BigInt?   @map("branch_id")
   technicianId     BigInt?   @map("technician_id")
-  scheduledAt      DateTime  @map("scheduled_at") @db.Timestamp(0)
-  estimatedEndAt   DateTime? @map("estimated_end_at") @db.Timestamp(0)
-  startedAt        DateTime? @map("started_at") @db.Timestamp(0)
-  completedAt      DateTime? @map("completed_at") @db.Timestamp(0)
+  scheduledAt      DateTime  @map("scheduled_at") @db.Timestamptz(0)
+  estimatedEndAt   DateTime? @map("estimated_end_at") @db.Timestamptz(0)
+  startedAt        DateTime? @map("started_at") @db.Timestamptz(0)
+  completedAt      DateTime? @map("completed_at") @db.Timestamptz(0)
   status           String    @default("pending") @db.VarChar(255)
   customerSymptoms String?   @map("customer_symptoms")
   internalNotes    String?   @map("internal_notes")
@@ -291,9 +291,9 @@ model Appointment {
   paymentMethod    String?   @map("payment_method") @db.VarChar(255)
   paymentStatus    String    @default("pending") @map("payment_status") @db.VarChar(255)
   aiStatus         AiStatus  @default(pending) @map("ai_status")
-  createdAt        DateTime? @map("created_at") @db.Timestamp(0)
-  updatedAt        DateTime? @map("updated_at") @db.Timestamp(0)
-  deletedAt        DateTime? @map("deleted_at") @db.Timestamp(0)
+  createdAt        DateTime? @map("created_at") @db.Timestamptz(0)
+  updatedAt        DateTime? @map("updated_at") @db.Timestamptz(0)
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamptz(0)
 
   workshop               Workshop               @relation(fields: [workshopId], references: [id])
   customer               Customer?              @relation("AppointmentCustomer", fields: [customerId], references: [id])
@@ -344,8 +344,8 @@ model AiSummary {
   urgencyLevel     String?   @map("urgency_level") @db.VarChar(255)
   tokensUsed       Int       @default(0) @map("tokens_used")
   costUsd          Decimal   @default(0) @map("cost_usd") @db.Decimal(8, 6)
-  createdAt        DateTime? @map("created_at") @db.Timestamp(0)
-  updatedAt        DateTime? @map("updated_at") @db.Timestamp(0)
+  createdAt        DateTime? @map("created_at") @db.Timestamptz(0)
+  updatedAt        DateTime? @map("updated_at") @db.Timestamptz(0)
 
   appointment Appointment @relation(fields: [appointmentId], references: [id])
   workshop    Workshop    @relation(fields: [workshopId], references: [id])
@@ -371,9 +371,9 @@ model Payment {
   paymentRequestId     BigInt?   @map("payment_request_id")
   createdById          BigInt?   @map("created_by_id")
   notes                String?
-  paidAt               DateTime? @map("paid_at") @db.Timestamp(0)
-  createdAt            DateTime? @map("created_at") @db.Timestamp(0)
-  updatedAt            DateTime? @map("updated_at") @db.Timestamp(0)
+  paidAt               DateTime? @map("paid_at") @db.Timestamptz(0)
+  createdAt            DateTime? @map("created_at") @db.Timestamptz(0)
+  updatedAt            DateTime? @map("updated_at") @db.Timestamptz(0)
 
   workshop       Workshop        @relation(fields: [workshopId], references: [id])
   appointment    Appointment     @relation(fields: [appointmentId], references: [id], map: "payment_appointment_fk")
@@ -397,9 +397,9 @@ model WorkshopPaymentGatewayConfig {
   credentialsEncrypted   String?   @map("credentials_encrypted")
   publicConfig           Json?     @map("public_config")
   webhookSecretEncrypted String?   @map("webhook_secret_encrypted")
-  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
-  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
-  deletedAt              DateTime? @map("deleted_at") @db.Timestamp(0)
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(0)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(0)
+  deletedAt              DateTime? @map("deleted_at") @db.Timestamptz(0)
 
   workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
 
@@ -425,13 +425,13 @@ model PaymentRequest {
   qrImageBase64         String?   @map("qr_image_base64")
   providerPaymentId     String?   @map("provider_payment_id") @db.VarChar(255)
   providerTransactionId String?   @map("provider_transaction_id") @db.VarChar(255)
-  expiresAt             DateTime? @map("expires_at") @db.Timestamp(0)
-  sentAt                DateTime? @map("sent_at") @db.Timestamp(0)
-  paidAt                DateTime? @map("paid_at") @db.Timestamp(0)
+  expiresAt             DateTime? @map("expires_at") @db.Timestamptz(0)
+  sentAt                DateTime? @map("sent_at") @db.Timestamptz(0)
+  paidAt                DateTime? @map("paid_at") @db.Timestamptz(0)
   metadata              Json?
   providerResponse      Json?     @map("provider_response")
-  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
-  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(0)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(0)
 
   workshop    Workshop     @relation(fields: [workshopId], references: [id], onDelete: Cascade)
   appointment Appointment? @relation(fields: [appointmentId], references: [id])
@@ -454,10 +454,10 @@ model WorkshopPaymentWebhookEvent {
   referenceCode         String?   @map("reference_code") @db.VarChar(255)
   providerTransactionId String?   @map("provider_transaction_id") @db.VarChar(255)
   signatureValid        Boolean   @default(false) @map("signature_valid")
-  processedAt           DateTime? @map("processed_at") @db.Timestamp(0)
+  processedAt           DateTime? @map("processed_at") @db.Timestamptz(0)
   rawPayload            Json      @map("raw_payload")
   errorMessage          String?   @map("error_message")
-  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(0)
 
   workshop Workshop? @relation(fields: [workshopId], references: [id])
 
@@ -484,8 +484,8 @@ model WorkshopTheme {
   fontHeading     String    @map("font_heading") @db.VarChar(255)
   fontBody        String    @map("font_body") @db.VarChar(255)
   fontMono        String    @map("font_mono") @db.VarChar(255)
-  createdAt       DateTime? @map("created_at") @db.Timestamp(0)
-  updatedAt       DateTime? @map("updated_at") @db.Timestamp(0)
+  createdAt       DateTime? @map("created_at") @db.Timestamptz(0)
+  updatedAt       DateTime? @map("updated_at") @db.Timestamptz(0)
 
   workshop Workshop @relation(fields: [workshopId], references: [id])
 
@@ -499,8 +499,8 @@ model WorkshopSchedule {
   opensAt    DateTime  @default(dbgenerated("'08:00:00'::time without time zone")) @map("opens_at") @db.Time(0)
   closesAt   DateTime  @default(dbgenerated("'18:00:00'::time without time zone")) @map("closes_at") @db.Time(0)
   isClosed   Boolean   @default(false) @map("is_closed")
-  createdAt  DateTime? @map("created_at") @db.Timestamp(0)
-  updatedAt  DateTime? @map("updated_at") @db.Timestamp(0)
+  createdAt  DateTime? @map("created_at") @db.Timestamptz(0)
+  updatedAt  DateTime? @map("updated_at") @db.Timestamptz(0)
 
   workshop Workshop @relation(fields: [workshopId], references: [id])
 
@@ -516,8 +516,8 @@ model TechnicianSchedule {
   startsAt    DateTime  @default(dbgenerated("'08:00:00'::time without time zone")) @map("starts_at") @db.Time(0)
   endsAt      DateTime  @default(dbgenerated("'18:00:00'::time without time zone")) @map("ends_at") @db.Time(0)
   isAvailable Boolean   @default(true) @map("is_available")
-  createdAt   DateTime? @map("created_at") @db.Timestamp(0)
-  updatedAt   DateTime? @map("updated_at") @db.Timestamp(0)
+  createdAt   DateTime? @map("created_at") @db.Timestamptz(0)
+  updatedAt   DateTime? @map("updated_at") @db.Timestamptz(0)
 
   workshop Workshop @relation(fields: [workshopId], references: [id])
   user     User     @relation(fields: [userId], references: [id])
@@ -545,9 +545,9 @@ model TechnicalManual {
   isActive      Boolean   @default(true) @map("is_active")
   isFeatured    Boolean   @default(false) @map("is_featured")
   uploadedBy    BigInt?   @map("uploaded_by")
-  createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt     DateTime? @default(now()) @map("updated_at") @db.Timestamp(6)
-  deletedAt     DateTime? @map("deleted_at") @db.Timestamp(6)
+  createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime? @default(now()) @map("updated_at") @db.Timestamptz(6)
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(6)
 
   uploader User? @relation(fields: [uploadedBy], references: [id])
 
@@ -561,8 +561,8 @@ model Broadcast {
   segment         String    @db.VarChar(255)
   recipientsCount Int       @default(0) @map("recipients_count")
   userId          BigInt    @map("user_id")
-  createdAt       DateTime? @map("created_at") @db.Timestamp(0)
-  updatedAt       DateTime? @map("updated_at") @db.Timestamp(0)
+  createdAt       DateTime? @map("created_at") @db.Timestamptz(0)
+  updatedAt       DateTime? @map("updated_at") @db.Timestamptz(0)
 
   sender User @relation(fields: [userId], references: [id])
 
@@ -575,8 +575,8 @@ model SystemSetting {
   value     Json?
   type      String?   @db.VarChar(255)
   group     String?   @db.VarChar(255)
-  createdAt DateTime? @map("created_at") @db.Timestamp(0)
-  updatedAt DateTime? @map("updated_at") @db.Timestamp(0)
+  createdAt DateTime? @map("created_at") @db.Timestamptz(0)
+  updatedAt DateTime? @map("updated_at") @db.Timestamptz(0)
 
   @@map("system_settings")
 }
@@ -596,10 +596,10 @@ model Sale {
   taxTotal            Decimal   @default(0) @map("tax_total") @db.Decimal(12, 2)
   total               Decimal   @default(0) @db.Decimal(12, 2)
   notes               String?
-  paidAt              DateTime? @map("paid_at") @db.Timestamp(0)
-  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
-  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
-  deletedAt           DateTime? @map("deleted_at") @db.Timestamp(0)
+  paidAt              DateTime? @map("paid_at") @db.Timestamptz(0)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(0)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(0)
+  deletedAt           DateTime? @map("deleted_at") @db.Timestamptz(0)
 
   workshop  Workshop   @relation(fields: [workshopId], references: [id], onDelete: Cascade)
   customer  User?      @relation("SaleCustomer", fields: [customerId], references: [id], onDelete: SetNull)
@@ -628,7 +628,7 @@ model SaleItem {
   total           Decimal  @default(0) @db.Decimal(12, 2)
   unitMeasureCode String   @default("94") @map("unit_measure_code") @db.VarChar(16)
   standardCode    String   @default("999") @map("standard_code") @db.VarChar(16)
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(0)
 
   sale          Sale           @relation(fields: [saleId], references: [id], onDelete: Cascade)
   inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
@@ -687,7 +687,7 @@ model WorkshopDianConfig {
   /// cambiar credenciales hay que borrarlo o seguiría usando el viejo.
   factusAccessToken      String?   @map("factus_access_token")
   factusRefreshToken     String?   @map("factus_refresh_token")
-  factusTokenExpiresAt   DateTime? @map("factus_token_expires_at") @db.Timestamp(0)
+  factusTokenExpiresAt   DateTime? @map("factus_token_expires_at") @db.Timestamptz(0)
 
   // --- Nextpyme ---
   /// La URL de su API: la de producción o la de habilitación, que Nextpyme
@@ -708,10 +708,10 @@ model WorkshopDianConfig {
   /// que el certificado o la resolución se venzan.
   providerCertificateDaysLeft Int?      @map("provider_certificate_days_left")
   providerResolutionDaysLeft  Int?      @map("provider_resolution_days_left")
-  providerCheckedAt           DateTime? @map("provider_checked_at") @db.Timestamp(0)
+  providerCheckedAt           DateTime? @map("provider_checked_at") @db.Timestamptz(0)
 
-  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamp(0)
-  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(0)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(0)
 
   workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
 
@@ -734,8 +734,8 @@ model DianElectronicDocument {
   cufe                String   @db.VarChar(128)
   xml                 String
   status              String   @default("generated") @db.VarChar(32)
-  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamp(0)
-  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(0)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(0)
 
   workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
   sale     Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
@@ -761,8 +761,8 @@ model SubscriptionPlan {
   trialDays      Int      @default(0) @map("trial_days")
   isActive       Boolean  @default(true) @map("is_active")
   sortOrder      Int      @default(0) @map("sort_order")
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamp(0)
-  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(0)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(0)
 
   subscriptions Subscription[]
   invoices      Invoice[]
@@ -780,22 +780,22 @@ model Subscription {
   provider           String    @db.VarChar(32)
   collectionMode     String    @map("collection_mode") @db.VarChar(16)
   status             String    @default("trialing") @db.VarChar(32)
-  trialEndsAt        DateTime? @map("trial_ends_at") @db.Timestamp(0)
-  currentPeriodStart DateTime? @map("current_period_start") @db.Timestamp(0)
-  currentPeriodEnd   DateTime? @map("current_period_end") @db.Timestamp(0)
-  graceEndsAt        DateTime? @map("grace_ends_at") @db.Timestamp(0)
+  trialEndsAt        DateTime? @map("trial_ends_at") @db.Timestamptz(0)
+  currentPeriodStart DateTime? @map("current_period_start") @db.Timestamptz(0)
+  currentPeriodEnd   DateTime? @map("current_period_end") @db.Timestamptz(0)
+  graceEndsAt        DateTime? @map("grace_ends_at") @db.Timestamptz(0)
   cancelAtPeriodEnd  Boolean   @default(false) @map("cancel_at_period_end")
-  canceledAt         DateTime? @map("canceled_at") @db.Timestamp(0)
+  canceledAt         DateTime? @map("canceled_at") @db.Timestamptz(0)
   // Mercado Pago card-on-file recurring (preapproval)
   mpPreapprovalId    String?   @map("mp_preapproval_id") @db.VarChar(255)
   mpPayerEmail       String?   @map("mp_payer_email") @db.VarChar(255)
   cardBrand          String?   @map("card_brand") @db.VarChar(32)
   cardLast4          String?   @map("card_last4") @db.VarChar(4)
-  lastPaymentAt      DateTime? @map("last_payment_at") @db.Timestamp(0)
-  lastFailureAt      DateTime? @map("last_failure_at") @db.Timestamp(0)
+  lastPaymentAt      DateTime? @map("last_payment_at") @db.Timestamptz(0)
+  lastFailureAt      DateTime? @map("last_failure_at") @db.Timestamptz(0)
   metadata           Json?
-  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
-  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(0)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(0)
 
   workshop     Workshop             @relation(fields: [workshopId], references: [id])
   plan         SubscriptionPlan     @relation(fields: [planId], references: [id])
@@ -817,18 +817,18 @@ model Invoice {
   planId           BigInt    @map("plan_id")
   reference        String    @unique @db.VarChar(120)
   status           String    @default("open") @db.VarChar(32)
-  periodStart      DateTime  @map("period_start") @db.Timestamp(0)
-  periodEnd        DateTime  @map("period_end") @db.Timestamp(0)
-  dueAt            DateTime  @map("due_at") @db.Timestamp(0)
+  periodStart      DateTime  @map("period_start") @db.Timestamptz(0)
+  periodEnd        DateTime  @map("period_end") @db.Timestamptz(0)
+  dueAt            DateTime  @map("due_at") @db.Timestamptz(0)
   amount           Decimal   @db.Decimal(12, 2)
   currency         String    @default("COP") @db.VarChar(3)
   hostedPaymentUrl String?   @map("hosted_payment_url") @db.Text
-  paidAt           DateTime? @map("paid_at") @db.Timestamp(0)
+  paidAt           DateTime? @map("paid_at") @db.Timestamptz(0)
   attemptCount     Int       @default(0) @map("attempt_count")
-  nextRetryAt      DateTime? @map("next_retry_at") @db.Timestamp(0)
+  nextRetryAt      DateTime? @map("next_retry_at") @db.Timestamptz(0)
   metadata         Json?
-  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
-  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(0)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(0)
 
   subscription Subscription         @relation(fields: [subscriptionId], references: [id])
   workshop     Workshop             @relation(fields: [workshopId], references: [id])
@@ -855,7 +855,7 @@ model PaymentTransaction {
   reference      String?  @db.VarChar(120)
   rawPayload     Json?    @map("raw_payload")
   errorMessage   String?  @map("error_message")
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(0)
 
   invoice      Invoice?     @relation(fields: [invoiceId], references: [id])
   subscription Subscription @relation(fields: [subscriptionId], references: [id])
@@ -874,9 +874,9 @@ model WebhookEvent {
   eventType        String    @map("event_type") @db.VarChar(255)
   payload          Json
   processingStatus String    @default("received") @map("processing_status") @db.VarChar(32)
-  processedAt      DateTime? @map("processed_at") @db.Timestamp(0)
+  processedAt      DateTime? @map("processed_at") @db.Timestamptz(0)
   errorMessage     String?   @map("error_message")
-  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(0)
 
   @@unique([provider, eventId])
   @@index([provider, eventType])
@@ -901,10 +901,10 @@ model PendingSignup {
   // MP: preapproval id | epayco: checkout reference — correlates webhook → signup
   providerRef String?   @map("provider_ref") @db.VarChar(255)
   workshopId  BigInt?   @map("workshop_id")
-  consumedAt  DateTime? @map("consumed_at") @db.Timestamp(0)
-  expiresAt   DateTime  @map("expires_at") @db.Timestamp(0)
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
-  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+  consumedAt  DateTime? @map("consumed_at") @db.Timestamptz(0)
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(0)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(0)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(0)
 
   @@index([status])
   @@index([expiresAt])
@@ -925,11 +925,11 @@ model AiProviderConfig {
   topP            Decimal   @default(1.0) @map("top_p") @db.Decimal(3, 2)
   costPer1kTokens Decimal   @default(0) @map("cost_per_1k_tokens") @db.Decimal(8, 6)
   sortOrder       Int       @default(0) @map("sort_order")
-  lastTestAt      DateTime? @map("last_test_at") @db.Timestamp(0)
+  lastTestAt      DateTime? @map("last_test_at") @db.Timestamptz(0)
   lastTestStatus  String?   @map("last_test_status") @db.VarChar(255)
   lastTestLatency Int?      @map("last_test_latency_ms")
-  createdAt       DateTime? @map("created_at") @db.Timestamp(0)
-  updatedAt       DateTime? @map("updated_at") @db.Timestamp(0)
+  createdAt       DateTime? @map("created_at") @db.Timestamptz(0)
+  updatedAt       DateTime? @map("updated_at") @db.Timestamptz(0)
 
   workshopAiConfigs WorkshopAiConfig[]
 
@@ -942,8 +942,8 @@ model WorkshopAiConfig {
   aiProviderConfigId BigInt    @map("ai_provider_config_id")
   isActive           Boolean   @default(true) @map("is_active")
   overrides          Json?
-  createdAt          DateTime? @map("created_at") @db.Timestamp(0)
-  updatedAt          DateTime? @map("updated_at") @db.Timestamp(0)
+  createdAt          DateTime? @map("created_at") @db.Timestamptz(0)
+  updatedAt          DateTime? @map("updated_at") @db.Timestamptz(0)
 
   workshop         Workshop         @relation(fields: [workshopId], references: [id])
   aiProviderConfig AiProviderConfig @relation(fields: [aiProviderConfigId], references: [id])
@@ -963,8 +963,8 @@ model NotificationLog {
   content       String
   status        String    @db.VarChar(255)
   metadata      Json?
-  sentAt        DateTime? @map("sent_at") @db.Timestamp(0)
-  createdAt     DateTime? @map("created_at") @db.Timestamp(0)
+  sentAt        DateTime? @map("sent_at") @db.Timestamptz(0)
+  createdAt     DateTime? @map("created_at") @db.Timestamptz(0)
 
   @@map("notifications_log")
 }
@@ -981,9 +981,9 @@ model Notification {
   actionUrl     String?   @map("action_url") @db.VarChar(500)
   dedupeKey     String?   @map("dedupe_key") @db.VarChar(255)
   metadata      Json?
-  readAt        DateTime? @map("read_at") @db.Timestamp(0)
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
-  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+  readAt        DateTime? @map("read_at") @db.Timestamptz(0)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(0)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(0)
 
   user        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   workshop    Workshop?              @relation(fields: [workshopId], references: [id], onDelete: Cascade)
@@ -1004,8 +1004,8 @@ model NotificationPreference {
   category   String   @db.VarChar(64)
   channel    String   @db.VarChar(32)
   enabled    Boolean  @default(true)
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(0)
-  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(0)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(0)
 
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   workshop Workshop? @relation(fields: [workshopId], references: [id], onDelete: Cascade)
@@ -1023,9 +1023,9 @@ model PushSubscription {
   p256dh     String
   auth       String
   userAgent  String?   @map("user_agent")
-  revokedAt  DateTime? @map("revoked_at") @db.Timestamp(0)
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
-  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(0)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(0)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(0)
 
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   workshop Workshop? @relation(fields: [workshopId], references: [id], onDelete: Cascade)
@@ -1050,12 +1050,12 @@ model NotificationDelivery {
   actionUrl      String?   @map("action_url") @db.VarChar(500)
   status         String    @default("pending") @db.VarChar(32)
   attempts       Int       @default(0)
-  nextAttemptAt  DateTime? @map("next_attempt_at") @db.Timestamp(0)
+  nextAttemptAt  DateTime? @map("next_attempt_at") @db.Timestamptz(0)
   lastError      String?   @map("last_error")
   metadata       Json?
-  sentAt         DateTime? @map("sent_at") @db.Timestamp(0)
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
-  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+  sentAt         DateTime? @map("sent_at") @db.Timestamptz(0)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(0)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(0)
 
   notification Notification? @relation(fields: [notificationId], references: [id], onDelete: SetNull)
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1080,8 +1080,8 @@ model ActivityLog {
   causerId    BigInt?   @map("causer_id")
   properties  Json?
   batchUuid   String?   @map("batch_uuid") @db.VarChar(255)
-  createdAt   DateTime? @map("created_at") @db.Timestamp(0)
-  updatedAt   DateTime? @map("updated_at") @db.Timestamp(0)
+  createdAt   DateTime? @map("created_at") @db.Timestamptz(0)
+  updatedAt   DateTime? @map("updated_at") @db.Timestamptz(0)
 
   @@map("activity_log")
 }
@@ -1108,8 +1108,8 @@ model Role {
   id        BigInt    @id @default(autoincrement())
   name      String    @db.VarChar(255)
   guardName String    @map("guard_name") @db.VarChar(255)
-  createdAt DateTime? @map("created_at") @db.Timestamp(0)
-  updatedAt DateTime? @map("updated_at") @db.Timestamp(0)
+  createdAt DateTime? @map("created_at") @db.Timestamptz(0)
+  updatedAt DateTime? @map("updated_at") @db.Timestamptz(0)
 
   permissions RoleHasPermission[]
   users       ModelHasRole[]
@@ -1122,8 +1122,8 @@ model Permission {
   id        BigInt    @id @default(autoincrement())
   name      String    @db.VarChar(255)
   guardName String    @map("guard_name") @db.VarChar(255)
-  createdAt DateTime? @map("created_at") @db.Timestamp(0)
-  updatedAt DateTime? @map("updated_at") @db.Timestamp(0)
+  createdAt DateTime? @map("created_at") @db.Timestamptz(0)
+  updatedAt DateTime? @map("updated_at") @db.Timestamptz(0)
 
   roles RoleHasPermission[]
 
@@ -1234,7 +1234,7 @@ model AppointmentPhoto {
   r2Key           String   @map("r2_key")
   url             String
   caption         String?
-  createdAt       DateTime @default(now()) @map("created_at")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   appointment   Appointment               @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
   checklistItem AppointmentChecklistItem? @relation(fields: [checklistItemId], references: [id])
@@ -1347,9 +1347,9 @@ model Customer {
   documentNumber String?   @unique @map("document_number") @db.VarChar(32)
   city           String?   @db.VarChar(120)
   userId         BigInt?   @unique @map("user_id")
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
-  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(0)
-  deletedAt      DateTime? @map("deleted_at") @db.Timestamp(0)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(0)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(0)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(0)
 
   workshops    CustomerWorkshop[]
   vehicles     Vehicle[]          @relation("VehicleCustomer")
@@ -1364,8 +1364,8 @@ model CustomerWorkshop {
   id         BigInt   @id @default(autoincrement())
   customerId BigInt   @map("customer_id")
   workshopId BigInt   @map("workshop_id")
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(0)
-  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(0)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(0)
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(0)
 
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
