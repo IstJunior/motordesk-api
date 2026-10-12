@@ -201,36 +201,95 @@ async function planPorCodigo(code: string, tx: Tx | typeof prisma = prisma) {
   return plan;
 }
 
-// Activa/renueva un periodo pagado sin cobro real (comp o pago manual).
-export async function activarSuscripcion(workshopId: bigint, planCode?: string | null) {
+// Activa o renueva un periodo del plan. Dos usos desde el superadmin:
+//   - sin cobro (`pagado: false`): MotorDesk lo regala; no queda como pago.
+//   - pago recibido por fuera (`pagado: true`): transferencia, efectivo. Queda
+//     una factura pagada y su transacción, como si hubiera entrado por ePayco.
+// Antes los dos botones hacían lo mismo y ninguno dejaba factura.
+//
+// Un periodo pagado vigente no se pisa: el nuevo empieza cuando termina. Antes
+// empezaba hoy, y renovar a un taller con 20 días pagados le quitaba esos días.
+export async function activarSuscripcion(
+  workshopId: bigint,
+  planCode?: string | null,
+  opciones: { pagado?: boolean } = {},
+) {
+  const now = new Date();
   const sub = await prisma.$transaction(async (tx) => {
     const existing = await tx.subscription.findUnique({ where: { workshopId }, include: { plan: true } });
     const plan = planCode
       ? await planPorCodigo(planCode, tx)
       : existing?.plan ?? (await planPorCodigo(DEFAULT_PLAN_CODE, tx));
-    const now = new Date();
+    const vigente =
+      existing?.status === SUBSCRIPTION_STATUS.ACTIVE && existing.currentPeriodEnd && existing.currentPeriodEnd > now;
+    const inicio = vigente ? existing!.currentPeriodEnd! : now;
+    const fin = addBillingMonths(inicio, plan.intervalMonths);
     const provider = existing?.provider ?? BILLING_PROVIDER_EPAYCO;
     const data = {
       planId: plan.id,
       provider,
       collectionMode: collectionModeForProvider(provider),
       status: SUBSCRIPTION_STATUS.ACTIVE,
-      currentPeriodStart: now,
-      currentPeriodEnd: addBillingMonths(now, plan.intervalMonths),
+      currentPeriodStart: inicio,
+      currentPeriodEnd: fin,
       graceEndsAt: null,
       trialEndsAt: null,
-      lastPaymentAt: now,
+      cancelAtPeriodEnd: false,
+      canceledAt: null,
+      ...(opciones.pagado ? { lastPaymentAt: now } : {}),
     };
     const sub = await tx.subscription.upsert({
       where: { workshopId },
       create: { workshopId, ...data },
       update: data,
     });
+
+    const abiertas = { subscriptionId: sub.id, status: { in: ["open", "past_due"] } };
+    let pagadaId: bigint | null = null;
+    if (opciones.pagado) {
+      // La factura abierta del mismo plan es la que el taller pagó por fuera.
+      const misma = await tx.invoice.findFirst({ where: { ...abiertas, planId: plan.id }, orderBy: { createdAt: "desc" } });
+      const datosPago = { status: "paid", paidAt: now, periodStart: inicio, periodEnd: fin, metadata: { manual: true } };
+      const pagada = misma
+        ? await tx.invoice.update({ where: { id: misma.id }, data: datosPago })
+        : await tx.invoice.create({
+            data: {
+              subscriptionId: sub.id,
+              workshopId,
+              planId: plan.id,
+              reference: `MD-MAN-${sub.id.toString()}-${now.getTime()}`,
+              dueAt: inicio,
+              amount: plan.amount,
+              currency: plan.currency,
+              ...datosPago,
+            },
+          });
+      pagadaId = pagada.id;
+      await tx.paymentTransaction.create({
+        data: {
+          invoiceId: pagada.id,
+          subscriptionId: sub.id,
+          workshopId,
+          provider,
+          status: "approved",
+          amount: pagada.amount,
+          currency: pagada.currency,
+          reference: pagada.reference,
+          rawPayload: { manual: true, registradoPor: "superadmin" },
+        },
+      });
+    }
+    // El periodo ya está cubierto: un enlace de pago abierto cobraría dos veces.
+    await tx.invoice.updateMany({
+      where: { ...abiertas, ...(pagadaId ? { id: { not: pagadaId } } : {}) },
+      data: { status: "void" },
+    });
+
     await syncWorkshopFromSubscription(tx, sub.id, now);
     return sub;
   });
-  // El periodo se regaló: MP tiene que volver a cobrar (si estaba suspendida)
-  // pero recién cuando termine, no en su fecha de siempre.
+  // Con tarjeta, MP vuelve a cobrar (si estaba suspendida) pero recién cuando
+  // termine este periodo, no en su fecha de siempre.
   const aviso = await alinearCobroMp(sub.id, sub.currentPeriodEnd!);
   return { sub, aviso };
 }
@@ -289,7 +348,8 @@ export async function extenderTrial(workshopId: bigint, days = 15) {
 // Periodo de gracia: past_due con N días desde hoy.
 export async function darGracia(workshopId: bigint, days = 5) {
   const existing = await prisma.subscription.findUnique({ where: { workshopId } });
-  if (!existing) return null;
+  // Antes devolvía null y el panel no decía nada: parecía que había funcionado.
+  if (!existing) throw new Error("Este taller no tiene suscripción: usa «Extender prueba» o «Activar periodo».");
   return prisma.$transaction(async (tx) => {
     const now = new Date();
     const sub = await tx.subscription.update({
@@ -326,7 +386,7 @@ export async function suspenderSuscripcion(workshopId: bigint) {
 // Cancelación inmediata (hard cancel del superadmin).
 export async function cancelarSuscripcion(workshopId: bigint) {
   const existing = await prisma.subscription.findUnique({ where: { workshopId } });
-  if (!existing) return null;
+  if (!existing) throw new Error("Este taller no tiene suscripción que cancelar: usa «Suspender».");
   const sub = await prisma.$transaction(async (tx) => {
     const updated = await tx.subscription.update({
       where: { workshopId },

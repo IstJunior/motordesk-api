@@ -144,6 +144,7 @@ talleresRoutes.get("/:id", async (c) => {
       city: true,
       isActive: true,
       subscriptionStatus: true,
+      trialEndsAt: true,
       enabledModules: true,
       whatsappSession: true,
       whatsappStatus: true,
@@ -156,7 +157,9 @@ talleresRoutes.get("/:id", async (c) => {
           trialEndsAt: true,
           currentPeriodEnd: true,
           cancelAtPeriodEnd: true,
-          plan: { select: { id: true, name: true } },
+          graceEndsAt: true,
+          metadata: true,
+          plan: { select: { id: true, code: true, name: true, intervalMonths: true } },
         },
       },
       users: {
@@ -230,8 +233,10 @@ talleresRoutes.post("/:id/suscripcion", async (c) => {
   try {
     switch (accion) {
       case "activar":
-      case "pago_manual":
         aviso = (await activarSuscripcion(id, planCode ?? null)).aviso;
+        break;
+      case "pago_manual":
+        aviso = (await activarSuscripcion(id, planCode ?? null, { pagado: true })).aviso;
         break;
       case "trial":
         aviso = (await extenderTrial(id, dias ?? 15))?.aviso ?? null;
@@ -249,9 +254,15 @@ talleresRoutes.post("/:id/suscripcion", async (c) => {
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : "No se pudo actualizar la suscripción" }, 400);
   }
+  // Lo que quedó, para que el panel diga exactamente qué cambió.
   const w = await prisma.workshop.findUnique({
     where: { id },
-    select: { subscriptionStatus: true, isActive: true, trialEndsAt: true },
+    select: {
+      subscriptionStatus: true,
+      isActive: true,
+      trialEndsAt: true,
+      subscription: { select: { status: true, trialEndsAt: true, currentPeriodEnd: true, graceEndsAt: true } },
+    },
   });
   return c.json({ ...w, aviso });
 });
