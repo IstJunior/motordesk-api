@@ -45,6 +45,7 @@ export async function requireWorkshop(c: Context, next: Next) {
       name: true,
       isActive: true,
       subscriptionStatus: true,
+      trialEndsAt: true,
       enabledModules: true,
       whatsappSession: true,
       subscription: {

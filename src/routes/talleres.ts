@@ -224,14 +224,17 @@ talleresRoutes.post("/:id/suscripcion", async (c) => {
   const parsed = suscripcionSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "Datos inválidos" }, 400);
   const { accion, dias, planCode } = parsed.data;
+  // Aviso si Mercado Pago no aceptó aplazar el cobro: el cambio queda hecho,
+  // pero MP cobrará en su fecha original.
+  let aviso: string | null = null;
   try {
     switch (accion) {
       case "activar":
       case "pago_manual":
-        await activarSuscripcion(id, planCode ?? null);
+        aviso = (await activarSuscripcion(id, planCode ?? null)).aviso;
         break;
       case "trial":
-        await extenderTrial(id, dias ?? 15);
+        aviso = (await extenderTrial(id, dias ?? 15))?.aviso ?? null;
         break;
       case "gracia":
         await darGracia(id, dias ?? 5);
@@ -250,7 +253,7 @@ talleresRoutes.post("/:id/suscripcion", async (c) => {
     where: { id },
     select: { subscriptionStatus: true, isActive: true, trialEndsAt: true },
   });
-  return c.json(w);
+  return c.json({ ...w, aviso });
 });
 
 // GET /talleres/:id/users — usuarios del taller.

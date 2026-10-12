@@ -1,6 +1,7 @@
 type WorkshopLike = {
   subscriptionStatus: string | null;
   isActive: boolean;
+  trialEndsAt?: Date | null;
 };
 
 type SubscriptionLike = {
@@ -72,7 +73,18 @@ export function billingAccess(
   }
 
   if (workshop.subscriptionStatus === "active") return { allowed: true, state: "active", message: null };
-  if (workshop.subscriptionStatus === "trial") return { allowed: true, state: "trial", message: null };
+  // Talleres de antes del sistema de cobro: la prueba vence por fecha (misma
+  // regla que el monolito, src/lib/billing/access.ts).
+  if (workshop.subscriptionStatus === "trial") {
+    if (workshop.trialEndsAt && workshop.trialEndsAt.getTime() < now.getTime()) {
+      return {
+        allowed: false,
+        state: "expired",
+        message: `La prueba gratis terminó el ${fecha(workshop.trialEndsAt)}. Elige un plan para seguir usando MotorDesk.`,
+      };
+    }
+    return { allowed: true, state: "trial", message: null };
+  }
   if (workshop.subscriptionStatus === "canceled") {
     return { allowed: false, state: "canceled", message: "La suscripción del taller fue cancelada." };
   }

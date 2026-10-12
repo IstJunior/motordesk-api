@@ -125,6 +125,76 @@ async function syncMpPreapproval(
   }
 }
 
+// Mercado Pago no deja mover la fecha del próximo cobro (el PUT acepta
+// `start_date`, `next_payment_date` y `free_trial`, responde 200 y no cambia
+// nada; probado el 2026-10-12). Lo que sí respeta es la pausa. Así que, cuando
+// el superadmin extiende la prueba o regala un periodo, si MP iba a cobrar
+// antes de la nueva fecha se pausa la suscripción y se anota en
+// `metadata.mpReanudarEl` cuándo reanudarla. La cobranza diaria del monolito
+// (src/lib/billing/cobro-aplazado.ts) la reanuda ese día y MP cobra.
+//
+// Devuelve un aviso para el superadmin si no se pudo: en ese caso MP cobra en
+// su fecha original.
+const TOLERANCIA_COBRO_MS = 60 * 60 * 1000;
+
+async function mp<T>(ruta: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`https://api.mercadopago.com${ruta}`, {
+    ...init,
+    headers: { Authorization: `Bearer ${MP_TOKEN}`, "Content-Type": "application/json" },
+  });
+  if (!res.ok) throw new Error(`MP ${res.status}: ${await res.text()}`);
+  return (await res.json()) as T;
+}
+
+function metadataComoObjeto(metadata: Prisma.JsonValue | null): Record<string, unknown> {
+  return metadata && typeof metadata === "object" && !Array.isArray(metadata) ? (metadata as Record<string, unknown>) : {};
+}
+
+export async function alinearCobroMp(subscriptionId: bigint, primerCobro: Date): Promise<string | null> {
+  const sub = await prisma.subscription.findUnique({ where: { id: subscriptionId } });
+  if (!sub || sub.provider !== BILLING_PROVIDER_MERCADO_PAGO || !sub.mpPreapprovalId) return null;
+  if (!MP_TOKEN) return "Falta MERCADO_PAGO_ACCESS_TOKEN: Mercado Pago cobrará en su fecha original.";
+
+  const id = encodeURIComponent(sub.mpPreapprovalId);
+  try {
+    const actual = await mp<{ status?: string; next_payment_date?: string }>(`/preapproval/${id}`);
+    if (actual.status === "cancelled") {
+      return "La suscripción en Mercado Pago está cancelada: el taller tendrá que registrar de nuevo su tarjeta.";
+    }
+    const siguiente = actual.next_payment_date ? new Date(actual.next_payment_date) : null;
+    const cobraAntes = !siguiente || siguiente.getTime() < primerCobro.getTime() - TOLERANCIA_COBRO_MS;
+    const metadata = metadataComoObjeto(sub.metadata);
+
+    if (cobraAntes) {
+      if (actual.status !== "paused") {
+        await mp(`/preapproval/${id}`, { method: "PUT", body: JSON.stringify({ status: "paused" }) });
+      }
+      await prisma.subscription.update({
+        where: { id: sub.id },
+        data: { metadata: { ...metadata, mpReanudarEl: primerCobro.toISOString() } as Prisma.InputJsonValue },
+      });
+    } else {
+      // MP ya cobra en la fecha o después: no hace falta pausa.
+      if (actual.status === "paused") {
+        await mp(`/preapproval/${id}`, { method: "PUT", body: JSON.stringify({ status: "authorized" }) });
+      }
+      if ("mpReanudarEl" in metadata) {
+        const { mpReanudarEl: _quitada, ...resto } = metadata;
+        void _quitada;
+        await prisma.subscription.update({ where: { id: sub.id }, data: { metadata: resto as Prisma.InputJsonValue } });
+      }
+    }
+    return null;
+  } catch (err) {
+    console.error("[billing/mp] no se pudo aplazar el cobro", {
+      preapprovalId: sub.mpPreapprovalId,
+      primerCobro: primerCobro.toISOString(),
+      error: err instanceof Error ? err.message : err,
+    });
+    return "No se pudo aplazar el cobro en Mercado Pago: cobrará en su fecha original. Intenta de nuevo.";
+  }
+}
+
 async function planPorCodigo(code: string, tx: Tx | typeof prisma = prisma) {
   const plan = await tx.subscriptionPlan.findUnique({ where: { code } });
   if (!plan || !plan.isActive) throw new Error(`Plan de suscripción no disponible: ${code}`);
@@ -133,7 +203,7 @@ async function planPorCodigo(code: string, tx: Tx | typeof prisma = prisma) {
 
 // Activa/renueva un periodo pagado sin cobro real (comp o pago manual).
 export async function activarSuscripcion(workshopId: bigint, planCode?: string | null) {
-  return prisma.$transaction(async (tx) => {
+  const sub = await prisma.$transaction(async (tx) => {
     const existing = await tx.subscription.findUnique({ where: { workshopId }, include: { plan: true } });
     const plan = planCode
       ? await planPorCodigo(planCode, tx)
@@ -157,10 +227,12 @@ export async function activarSuscripcion(workshopId: bigint, planCode?: string |
       update: data,
     });
     await syncWorkshopFromSubscription(tx, sub.id, now);
-    // Reactivar tras una suspensión debe devolver el preapproval de MP a cobro.
-    await syncMpPreapproval(sub, "authorized");
     return sub;
   });
+  // El periodo se regaló: MP tiene que volver a cobrar (si estaba suspendida)
+  // pero recién cuando termine, no en su fecha de siempre.
+  const aviso = await alinearCobroMp(sub.id, sub.currentPeriodEnd!);
+  return { sub, aviso };
 }
 
 // Extiende (o concede) trial N días desde el mayor entre hoy y el fin actual.
@@ -184,15 +256,34 @@ export async function extenderTrial(workshopId: bigint, days = 15) {
     return null;
   }
 
-  return prisma.$transaction(async (tx) => {
-    const base = existing.trialEndsAt && existing.trialEndsAt > now ? existing.trialEndsAt : now;
+  // Se extiende desde lo que el taller ya tiene: el fin de la prueba o, si está
+  // pagando, el fin del periodo pagado. Antes se contaba solo desde la prueba,
+  // y «extender 15 días» a un taller con 20 días pagados le quitaba 5.
+  const tieneHasta = [existing.trialEndsAt, existing.currentPeriodEnd]
+    .filter((d): d is Date => !!d && d > now)
+    .reduce((max, d) => (d > max ? d : max), now);
+  const trialEndsAt = addDays(tieneHasta, days);
+  // Con la fecha nueva vuelve a tocar el aviso de «tu prueba termina pronto».
+  const metadata = metadataComoObjeto(existing.metadata);
+  const reminders = { ...metadataComoObjeto((metadata.reminders ?? null) as Prisma.JsonValue) };
+  delete reminders.trial_ending;
+
+  const sub = await prisma.$transaction(async (tx) => {
     const sub = await tx.subscription.update({
       where: { workshopId },
-      data: { status: SUBSCRIPTION_STATUS.TRIALING, trialEndsAt: addDays(base, days), graceEndsAt: null },
+      data: {
+        status: SUBSCRIPTION_STATUS.TRIALING,
+        trialEndsAt,
+        graceEndsAt: null,
+        metadata: { ...metadata, reminders } as Prisma.InputJsonValue,
+      },
     });
     await syncWorkshopFromSubscription(tx, sub.id, now);
     return sub;
   });
+  // Con tarjeta, el cobro se corre a la nueva fecha.
+  const aviso = await alinearCobroMp(sub.id, trialEndsAt);
+  return { sub, aviso };
 }
 
 // Periodo de gracia: past_due con N días desde hoy.
