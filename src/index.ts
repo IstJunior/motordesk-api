@@ -14,6 +14,7 @@ import { whatsappRoutes } from "./routes/whatsapp.js";
 import { tenantRoutes } from "./routes/tenant.js";
 import { backupsRoutes } from "./routes/backups.js";
 import { auditoriaRoutes } from "./routes/auditoria.js";
+import { facturacionRoutes } from "./routes/facturacion.js";
 import { iniciarBackupProgramado } from "./lib/backup-scheduler.js";
 import { auditarMutaciones } from "./lib/auditoria.js";
 
@@ -34,13 +35,14 @@ api.route("/auth", authRoutes);
 // prefijo y no dentro de cada router para que un endpoint nuevo quede auditado
 // sin tener que acordarse. La bandeja queda fuera a propósito: responder chats
 // es volumen, no una acción sensible.
-for (const base of ["/talleres", "/config", "/manuales", "/vehiculos", "/backups", "/whatsapp"]) {
+for (const base of ["/talleres", "/config", "/manuales", "/vehiculos", "/backups", "/whatsapp", "/facturacion"]) {
   api.use(base, auditarMutaciones);
   api.use(`${base}/*`, auditarMutaciones);
 }
 
 // Control-plane (superadmin).
 api.route("/talleres", talleresRoutes);
+api.route("/facturacion", facturacionRoutes);
 api.route("/invitaciones", invitacionesRoutes);
 api.route("/config", configRoutes);
 api.route("/manuales", manualesRoutes);

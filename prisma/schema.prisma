@@ -107,13 +107,13 @@ model Workshop {
   sales                        Sale[]
   dianConfig                   WorkshopDianConfig?
   dianDocuments                DianElectronicDocument[]
+  paquetesDeFacturacion        PaqueteDeFacturacion[]
   chatSessions                 ChatSession[]
+  customers                    CustomerWorkshop[]
 
   @@index([isActive])
   @@index([workshopType])
   @@index([slug])
-  customers CustomerWorkshop[]
-
   @@map("workshops")
 }
 
@@ -601,10 +601,10 @@ model Sale {
   updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(0)
   deletedAt           DateTime? @map("deleted_at") @db.Timestamptz(0)
 
-  workshop  Workshop   @relation(fields: [workshopId], references: [id], onDelete: Cascade)
-  customer  User?      @relation("SaleCustomer", fields: [customerId], references: [id], onDelete: SetNull)
-  createdBy User?      @relation("SaleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  items     SaleItem[]
+  workshop     Workshop                @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  customer     User?                   @relation("SaleCustomer", fields: [customerId], references: [id], onDelete: SetNull)
+  createdBy    User?                   @relation("SaleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  items        SaleItem[]
   dianDocument DianElectronicDocument?
 
   @@unique([workshopId, referenceCode])
@@ -641,68 +641,68 @@ model SaleItem {
 // Facturación electrónica propia DIAN (modelo A): cada taller es emisor y
 // SuperAdmin controla su activación y configuración. No usa proveedor externo.
 model WorkshopDianConfig {
-  id                   BigInt   @id @default(autoincrement())
-  workshopId           BigInt   @unique @map("workshop_id")
-  enabled              Boolean  @default(false)
-  environment          String   @default("habilitacion") @db.VarChar(32)
-  personType           String   @default("juridica") @map("person_type") @db.VarChar(32)
-  documentType         String   @default("31") @map("document_type") @db.VarChar(16)
-  documentNumber       String?  @map("document_number") @db.VarChar(64)
-  dv                   String?  @db.VarChar(2)
-  legalName            String?  @map("legal_name") @db.VarChar(255)
-  address              String?  @db.VarChar(255)
-  city                 String?  @db.VarChar(120)
-  municipalityCode     String?  @map("municipality_code") @db.VarChar(16)
-  department           String?  @db.VarChar(120)
-  email                String?  @db.VarChar(255)
-  phone                String?  @db.VarChar(80)
-  taxRegime            String?  @map("tax_regime") @db.VarChar(80)
-  responsibilities     String?  @db.VarChar(255)
-  softwareId           String?  @map("software_id") @db.VarChar(255)
-  resolutionPrefix     String?  @map("resolution_prefix") @db.VarChar(32)
-  resolutionNumber     String?  @map("resolution_number") @db.VarChar(120)
+  id                    BigInt  @id @default(autoincrement())
+  workshopId            BigInt  @unique @map("workshop_id")
+  enabled               Boolean @default(false)
+  environment           String  @default("habilitacion") @db.VarChar(32)
+  personType            String  @default("juridica") @map("person_type") @db.VarChar(32)
+  documentType          String  @default("31") @map("document_type") @db.VarChar(16)
+  documentNumber        String? @map("document_number") @db.VarChar(64)
+  dv                    String? @db.VarChar(2)
+  legalName             String? @map("legal_name") @db.VarChar(255)
+  address               String? @db.VarChar(255)
+  city                  String? @db.VarChar(120)
+  municipalityCode      String? @map("municipality_code") @db.VarChar(16)
+  department            String? @db.VarChar(120)
+  email                 String? @db.VarChar(255)
+  phone                 String? @db.VarChar(80)
+  taxRegime             String? @map("tax_regime") @db.VarChar(80)
+  responsibilities      String? @db.VarChar(255)
+  softwareId            String? @map("software_id") @db.VarChar(255)
+  resolutionPrefix      String? @map("resolution_prefix") @db.VarChar(32)
+  resolutionNumber      String? @map("resolution_number") @db.VarChar(120)
   technicalKeyEncrypted String? @map("technical_key_encrypted")
-  rangeFrom            Int?     @map("range_from")
-  rangeTo              Int?     @map("range_to")
-  nextInvoiceNumber    Int?     @map("next_invoice_number")
+  rangeFrom             Int?    @map("range_from")
+  rangeTo               Int?    @map("range_to")
+  nextInvoiceNumber     Int?    @map("next_invoice_number")
 
   /// Quién emite ante la DIAN: "motordesk" (vía directa, que NO transmite),
   /// "factus" o "nextpyme". Las columnas las crea el monolito, que es el dueño de las
   /// migraciones; acá solo se declaran para poder leerlas y escribirlas.
-  provider              String  @default("motordesk") @db.VarChar(32)
+  provider            String  @default("motordesk") @db.VarChar(32)
   /// "sandbox" | "production" (Factus), "habilitacion" | "production"
   /// (Nextpyme). Solo aplica a un proveedor tecnológico.
-  providerEnvironment   String? @map("provider_environment") @db.VarChar(16)
+  providerEnvironment String? @map("provider_environment") @db.VarChar(16)
 
-  factusClientId         String?   @map("factus_client_id") @db.VarChar(255)
-  factusClientSecretEnc  String?   @map("factus_client_secret_enc")
-  factusUsername         String?   @map("factus_username") @db.VarChar(255)
-  factusPasswordEnc      String?   @map("factus_password_enc")
-  factusNumberingRangeId Int?      @map("factus_numbering_range_id")
-  factusSupportRangeId   Int?      @map("factus_support_range_id")
+  factusClientId          String?   @map("factus_client_id") @db.VarChar(255)
+  factusClientSecretEnc   String?   @map("factus_client_secret_enc")
+  factusUsername          String?   @map("factus_username") @db.VarChar(255)
+  factusPasswordEnc       String?   @map("factus_password_enc")
+  factusNumberingRangeId  Int?      @map("factus_numbering_range_id")
+  factusSupportRangeId    Int?      @map("factus_support_range_id")
   /// El de la nota crédito, que es otro rango y que Factus exige
   /// obligatoriamente al anular una factura.
-  factusCreditNoteRangeId Int?     @map("factus_credit_note_range_id")
+  factusCreditNoteRangeId Int?      @map("factus_credit_note_range_id")
   /// Caché del token que mantiene el monolito. El panel no lo toca, pero al
   /// cambiar credenciales hay que borrarlo o seguiría usando el viejo.
-  factusAccessToken      String?   @map("factus_access_token")
-  factusRefreshToken     String?   @map("factus_refresh_token")
-  factusTokenExpiresAt   DateTime? @map("factus_token_expires_at") @db.Timestamptz(0)
+  factusAccessToken       String?   @map("factus_access_token")
+  factusRefreshToken      String?   @map("factus_refresh_token")
+  factusTokenExpiresAt    DateTime? @map("factus_token_expires_at") @db.Timestamptz(0)
 
   // --- Nextpyme ---
   /// La URL de su API: la de producción o la de habilitación, que Nextpyme
   /// entrega aparte. No tiene sandbox público, así que el ambiente lo decide
   /// el par URL + token que se pegue.
-  nextpymeBaseUrl        String?   @map("nextpyme_base_url") @db.VarChar(255)
+  nextpymeBaseUrl   String? @map("nextpyme_base_url") @db.VarChar(255)
   /// Bearer fijo, cifrado como los secretos de Factus.
-  nextpymeTokenEnc       String?   @map("nextpyme_token_enc")
+  nextpymeTokenEnc  String? @map("nextpyme_token_enc")
   /// Solo en habilitación: el set de pruebas que asigna la DIAN.
-  nextpymeTestSetId      String?   @map("nextpyme_test_set_id") @db.VarChar(64)
+  nextpymeTestSetId String? @map("nextpyme_test_set_id") @db.VarChar(64)
 
   /// Numeración de notas crédito cuando la pone MotorDesk (Nextpyme). Con
   /// Factus la pone el rango elegido y estas quedan vacías.
-  creditNotePrefix       String?   @map("credit_note_prefix") @db.VarChar(32)
-  nextCreditNoteNumber   Int?      @map("next_credit_note_number")
+  creditNotePrefix     String? @map("credit_note_prefix") @db.VarChar(32)
+  nextCreditNoteNumber Int?    @map("next_credit_note_number")
 
   /// Lo que el proveedor reportó en su última respuesta, para avisar antes de
   /// que el certificado o la resolución se venzan.
@@ -710,38 +710,126 @@ model WorkshopDianConfig {
   providerResolutionDaysLeft  Int?      @map("provider_resolution_days_left")
   providerCheckedAt           DateTime? @map("provider_checked_at") @db.Timestamptz(0)
 
-  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(0)
-  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(0)
+  /// De dónde gasta el taller sus documentos: "individual" (paquete propio en
+  /// el proveedor) o "bolsa" (repartidos de una bolsa multifacturador). Ver
+  /// src/lib/facturacion/cupo.ts en el monolito.
+  cupoModalidad String  @default("individual") @map("cupo_modalidad") @db.VarChar(16)
+  cupoBolsaId   BigInt? @map("cupo_bolsa_id")
 
-  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(0)
+
+  workshop  Workshop            @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  cupoBolsa BolsaDeFacturacion? @relation(fields: [cupoBolsaId], references: [id], onDelete: SetNull)
 
   @@index([enabled])
+  @@index([cupoBolsaId])
   @@map("workshop_dian_configs")
 }
 
+/// Una bolsa multifacturador comprada al proveedor tecnológico: un volumen de
+/// documentos que MotorDesk reparte entre sus talleres. Dura un año desde la
+/// compra y lo que no se gaste se pierde.
+model BolsaDeFacturacion {
+  id         BigInt   @id @default(autoincrement())
+  proveedor  String   @default("factus") @db.VarChar(32)
+  nombre     String   @db.VarChar(120)
+  documentos Int
+  precio     Decimal? @db.Decimal(14, 2)
+  compradaEl DateTime @map("comprada_el") @db.Date
+  venceEl    DateTime @map("vence_el") @db.Date
+  notas      String?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(0)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(0)
+
+  talleres WorkshopDianConfig[]
+
+  @@map("fe_bolsas")
+}
+
+/// El año de facturación electrónica que un taller le paga a MotorDesk: cuántos
+/// documentos tiene y entre qué fechas puede gastarlos.
+///
+/// Se registra al recibir el pago y **no se activa antes de `activableDesde`**,
+/// cinco días hábiles después, que es el plazo de retracto: así nunca se compra
+/// en el proveedor un paquete que el taller todavía puede devolver. Los doce
+/// meses corren desde `activadoEl`.
+model PaqueteDeFacturacion {
+  id             BigInt    @id @default(autoincrement())
+  workshopId     BigInt    @map("workshop_id")
+  /// Código del nivel publicado (fe-basico, fe-estandar, fe-alto) o null si se
+  /// pactó a la medida.
+  nivel          String?   @db.VarChar(32)
+  documentos     Int
+  precio         Decimal?  @db.Decimal(14, 2)
+  pagadoEl       DateTime  @map("pagado_el") @db.Date
+  activableDesde DateTime  @map("activable_desde") @db.Date
+  activadoEl     DateTime? @map("activado_el") @db.Timestamptz(0)
+  venceEl        DateTime? @map("vence_el") @db.Timestamptz(0)
+  /// Retracto o devolución. Un paquete anulado no cuenta para nada.
+  anuladoEl      DateTime? @map("anulado_el") @db.Timestamptz(0)
+  notas          String?
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(0)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(0)
+
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+
+  @@index([workshopId, venceEl])
+  @@map("fe_paquetes")
+}
+
 model DianElectronicDocument {
-  id                  BigInt   @id @default(autoincrement())
-  workshopId          BigInt   @map("workshop_id")
-  saleId              BigInt   @unique @map("sale_id")
-  prefix              String?  @db.VarChar(32)
-  number              Int
-  consecutive         String   @map("consecutive") @db.VarChar(80)
-  environment         String   @db.VarChar(32)
-  customerDocumentType String  @default("13") @map("customer_document_type") @db.VarChar(16)
-  customerDocument    String   @default("222222222222") @map("customer_document") @db.VarChar(64)
-  customerName        String   @default("Consumidor final") @map("customer_name") @db.VarChar(255)
-  customerEmail       String?  @map("customer_email") @db.VarChar(255)
-  cufe                String   @db.VarChar(128)
-  xml                 String
-  status              String   @default("generated") @db.VarChar(32)
-  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(0)
-  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(0)
+  id                   BigInt    @id @default(autoincrement())
+  workshopId           BigInt    @map("workshop_id")
+  saleId               BigInt    @unique @map("sale_id")
+  prefix               String?   @db.VarChar(32)
+  number               Int
+  consecutive          String    @map("consecutive") @db.VarChar(80)
+  environment          String    @db.VarChar(32)
+  customerDocumentType String    @default("13") @map("customer_document_type") @db.VarChar(16)
+  customerDocument     String    @default("222222222222") @map("customer_document") @db.VarChar(64)
+  customerName         String    @default("Consumidor final") @map("customer_name") @db.VarChar(255)
+  customerEmail        String?   @map("customer_email") @db.VarChar(255)
+  cufe                 String    @db.VarChar(128)
+  /// Factus no lo devuelve al emitir: se pide aparte y puede fallar sin que la
+  /// factura deje de existir. Por eso es opcional.
+  xml                  String?
+  status               String    @default("generated") @db.VarChar(32)
+  /// Quién lo emitió: "motordesk" (borrador local, no existe para la DIAN),
+  /// "factus" o "nextpyme".
+  provider             String    @default("motordesk") @db.VarChar(32)
+  /// Si la DIAN lo validó de verdad. La vía directa lo deja en false siempre.
+  validated            Boolean   @default(false)
+  qrUrl                String?   @map("qr_url")
+  publicUrl            String?   @map("public_url")
+  /// Avisos de la DIAN que no son rechazo. El RUT01 sale en casi todas.
+  warnings             String?
+  /// El total que liquidó el proveedor, para compararlo con el de la venta.
+  providerTotal        Decimal?  @map("provider_total") @db.Decimal(14, 2)
+  /// La nota crédito que anuló esta factura. Existir es lo que impide anularla
+  /// dos veces: Factus acepta varias notas contra la misma factura.
+  creditNoteNumber     String?   @map("credit_note_number") @db.VarChar(80)
+  /// La nota crédito lleva CUDE, no CUFE.
+  creditNoteCude       String?   @map("credit_note_cude") @db.VarChar(128)
+  creditNoteAt         DateTime? @map("credit_note_at") @db.Timestamptz(0)
+  /// El cuerpo enviado al proveedor, congelado: un reintento tras una demora
+  /// tiene que mandar lo mismo (misma fecha y hora → mismo CUFE).
+  providerPayload      Json?     @map("provider_payload")
+  /// Nombres de los archivos en el proveedor: { pdf, xml, attached }.
+  providerFiles        Json?     @map("provider_files")
+  /// La nota crédito, congelada con su número: reintentar no gasta otro.
+  creditNotePayload    Json?     @map("credit_note_payload")
+  /// Por qué falló el último intento, para mostrarlo sin volver a llamar.
+  lastError            String?   @map("last_error")
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(0)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(0)
 
   workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
   sale     Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
 
   @@unique([workshopId, consecutive])
   @@index([workshopId, status, createdAt])
+  @@index([workshopId, provider])
   @@map("dian_electronic_documents")
 }
 
@@ -1272,16 +1360,16 @@ model VehicleModel {
 // Bandeja / chat de leads y talleres (portado de SmartPOS).
 // workshopId null = lead de MotorDesk; con valor = chat de un taller.
 model ChatSession {
-  id         String    @id @default(uuid()) @db.Uuid
-  name       String?   @db.VarChar(120)
-  phone      String?   @db.VarChar(40)
-  workshopId BigInt?   @map("workshop_id")
-  status     String    @default("active") @db.VarChar(16)
-  accessTokenHash String? @map("access_token_hash") @db.VarChar(64)
-  lastAt     DateTime  @default(now()) @map("last_at") @db.Timestamptz(6)
-  seenAt     DateTime? @map("seen_at") @db.Timestamptz(6)
-  closedAt   DateTime? @map("closed_at") @db.Timestamptz(6)
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  id              String    @id @default(uuid()) @db.Uuid
+  name            String?   @db.VarChar(120)
+  phone           String?   @db.VarChar(40)
+  workshopId      BigInt?   @map("workshop_id")
+  status          String    @default("active") @db.VarChar(16)
+  accessTokenHash String?   @map("access_token_hash") @db.VarChar(64)
+  lastAt          DateTime  @default(now()) @map("last_at") @db.Timestamptz(6)
+  seenAt          DateTime? @map("seen_at") @db.Timestamptz(6)
+  closedAt        DateTime? @map("closed_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   workshop Workshop?     @relation(fields: [workshopId], references: [id])
   messages ChatMessage[]
