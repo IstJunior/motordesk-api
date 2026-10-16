@@ -28,6 +28,7 @@ const ACCIONES: Record<string, string> = {
   "POST /facturacion/talleres/:id/paquetes/:id/activar": "Activación del año de facturación electrónica",
   "POST /facturacion/talleres/:id/paquetes/:id/ampliar": "Ampliación del paquete de facturación electrónica",
   "POST /facturacion/talleres/:id/paquetes/:id/anular": "Anulación del paquete de facturación electrónica",
+  "POST /facturacion/talleres/:id/factus": "Consulta del consumo en Factus",
   "PUT /config": "Cambio de ajustes del sistema",
   "POST /config/ai-providers": "Alta de proveedor de IA",
   "PUT /config/ai-providers/:id": "Edición de proveedor de IA",

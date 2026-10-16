@@ -48,26 +48,39 @@ async function exigirUnico(type: string, brand: string, model: string, excluir?:
   if (existe) throw new Error("Esta marca y modelo ya existen para el tipo seleccionado.");
 }
 
+// GET /vehiculos?q=&type=&page= — una página del catálogo y el total.
+//
+// Antes devolvía los primeros 200 sin decirlo: con 1.676 modelos, sin buscar
+// se veía de la A a la H y el resto parecía no existir. Ahora pagina y dice
+// cuántos hay.
+const POR_PAGINA = 50;
+
 vehiculosRoutes.get("/", async (c) => {
-  const q = c.req.query("q") ?? "";
+  const q = (c.req.query("q") ?? "").trim();
   const type = c.req.query("type") ?? "";
-  const models = await prisma.vehicleModel.findMany({
-    where: {
-      ...(type ? { type } : {}),
-      ...(q
-        ? {
-            OR: [
-              { brand: { contains: q, mode: "insensitive" } },
-              { model: { contains: q, mode: "insensitive" } },
-            ],
-          }
-        : {}),
-    },
-    orderBy: [{ brand: "asc" }, { model: "asc" }, { yearFrom: "asc" }],
-    take: 200,
-    select: { id: true, type: true, brand: true, model: true, yearFrom: true, yearTo: true, engine: true, isActive: true },
-  });
-  return c.json(models);
+  const pagina = Math.max(1, Number(c.req.query("page") ?? "1") || 1);
+  const where = {
+    ...(type ? { type } : {}),
+    ...(q
+      ? {
+          OR: [
+            { brand: { contains: q, mode: "insensitive" as const } },
+            { model: { contains: q, mode: "insensitive" as const } },
+          ],
+        }
+      : {}),
+  };
+  const [modelos, total] = await Promise.all([
+    prisma.vehicleModel.findMany({
+      where,
+      orderBy: [{ brand: "asc" }, { model: "asc" }, { yearFrom: "asc" }],
+      skip: (pagina - 1) * POR_PAGINA,
+      take: POR_PAGINA,
+      select: { id: true, type: true, brand: true, model: true, yearFrom: true, yearTo: true, engine: true, isActive: true },
+    }),
+    prisma.vehicleModel.count({ where }),
+  ]);
+  return c.json({ modelos, total, pagina, porPagina: POR_PAGINA });
 });
 
 vehiculosRoutes.get("/meta/tipos", (c) => c.json({ tipos: TIPOS_VEHICULO }));

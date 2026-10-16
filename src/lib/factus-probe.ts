@@ -97,3 +97,56 @@ export async function probarConexion(cred: Credenciales): Promise<ResultadoDePru
     return { ok: false, error: e instanceof Error ? e.message : "No se pudo contactar a Factus." };
   }
 }
+
+/** Lo que Factus dice que lleva gastado un NIT: su suscripción vigente. */
+export type SuscripcionFactus = {
+  nombre: string;
+  asignados: number;
+  consumidos: number;
+  disponibles: number;
+  activadaEl: string | null;
+  venceEl: string | null;
+  vencida: boolean;
+  activa: boolean;
+  ilimitada: boolean;
+};
+
+/**
+ * `GET /v2/subscriptions`: las suscripciones activas del NIT de esas
+ * credenciales, con sus documentos asignados, consumidos y disponibles.
+ *
+ * Sirve para comparar el conteo de MotorDesk con el del proveedor. En el
+ * sandbox responde la cuenta compartida de Factus (un millón de documentos),
+ * no la del taller: solo en producción la comparación significa algo.
+ */
+export async function consultarSuscripciones(
+  cred: Credenciales,
+): Promise<{ ok: true; suscripciones: SuscripcionFactus[] } | { ok: false; error: string }> {
+  try {
+    const acceso = await token(cred);
+    const r = await fetch(`${BASES[cred.ambiente]}/v2/subscriptions`, {
+      headers: { Authorization: `Bearer ${acceso}`, Accept: "application/json" },
+      signal: AbortSignal.timeout(20_000),
+    });
+    const j = (await r.json().catch(() => null)) as { data?: Record<string, unknown>[]; message?: string } | null;
+    if (!r.ok) return { ok: false, error: j?.message || `Factus respondió HTTP ${r.status}.` };
+    const num = (v: unknown) => (typeof v === "number" ? v : Number(v ?? 0));
+    const texto = (v: unknown) => (typeof v === "string" && v ? v : null);
+    return {
+      ok: true,
+      suscripciones: (j?.data ?? []).map((s) => ({
+        nombre: String(s.name ?? ""),
+        asignados: num(s.documents_quota),
+        consumidos: num(s.documents_consumed),
+        disponibles: num(s.documents_available),
+        activadaEl: texto(s.activated_at),
+        venceEl: texto(s.expires_at),
+        vencida: siNo(s.has_expired),
+        activa: siNo(s.is_active),
+        ilimitada: siNo(s.has_unlimited_quota),
+      })),
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "No se pudo consultar Factus." };
+  }
+}

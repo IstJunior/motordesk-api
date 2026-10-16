@@ -18,6 +18,9 @@ import { prisma } from "../lib/db.js";
 import { superadminGuard } from "../auth/middleware.js";
 import { activableDesde, deIso, hoyEnBogota, iso } from "../lib/dias-habiles.js";
 import { cupoDeTaller, estadoDePaquete, MODALIDADES, resumenDeBolsas, sumarMeses } from "../lib/cupo-facturacion.js";
+import { monitorDeFacturacion, PERIODOS, type Periodo } from "../lib/monitor-facturacion.js";
+import { consultarSuscripciones } from "../lib/factus-probe.js";
+import { decryptJson } from "../lib/crypto.js";
 
 export const facturacionRoutes = new Hono<{ Variables: { superadmin: string } }>();
 facturacionRoutes.use("*", superadminGuard);
@@ -88,6 +91,15 @@ facturacionRoutes.get("/", async (c) => {
   );
 
   return c.json({ niveles: NIVELES, bolsas: await bolsas, talleres: filas });
+});
+
+// GET /facturacion/monitor?dias=30&pruebas=1 — serie, indicadores y riesgo por
+// taller. Ver lib/monitor-facturacion.ts.
+facturacionRoutes.get("/monitor", async (c) => {
+  const dias = Number(c.req.query("dias") ?? 30);
+  if (!(PERIODOS as readonly number[]).includes(dias)) return c.json({ error: "Periodo inválido" }, 400);
+  const conPruebas = c.req.query("pruebas") === "1";
+  return c.json(await monitorDeFacturacion({ dias: dias as Periodo, conPruebas }));
 });
 
 // ─── Bolsas ───
@@ -384,4 +396,29 @@ facturacionRoutes.post("/talleres/:id/paquetes/:paqueteId/anular", async (c) => 
     data: { anuladoEl: new Date(), notas: anotar(p.notas, `anulado — ${parsed.data.motivo}`) },
   });
   return c.json({ ok: true });
+});
+
+// POST /facturacion/talleres/:id/factus — lo que Factus dice que lleva gastado
+// ese NIT, al lado del conteo de MotorDesk. Es POST porque sale a internet con
+// las credenciales del taller: no se dispara solo al abrir el panel.
+facturacionRoutes.post("/talleres/:id/factus", async (c) => {
+  const id = idDe(c.req.param("id"));
+  if (!id || !(await tallerExiste(id))) return c.json({ error: "Taller no encontrado" }, 404);
+  const cfg = await prisma.workshopDianConfig.findUnique({ where: { workshopId: id } });
+  if (!cfg || cfg.provider !== "factus") return c.json({ ok: false, error: "Este taller no factura por Factus." });
+  const clientSecret = decryptJson<string>(cfg.factusClientSecretEnc);
+  const password = decryptJson<string>(cfg.factusPasswordEnc);
+  if (!cfg.factusClientId || !cfg.factusUsername || !clientSecret || !password) {
+    return c.json({ ok: false, error: "Faltan credenciales de Factus." });
+  }
+  const ambiente = cfg.providerEnvironment === "production" ? "production" : "sandbox";
+  const r = await consultarSuscripciones({
+    ambiente,
+    clientId: cfg.factusClientId,
+    clientSecret,
+    username: cfg.factusUsername,
+    password,
+  });
+  const cupo = await cupoDeTaller(id);
+  return c.json({ ...r, ambiente, motordesk: { usados: cupo.usados.total, restantes: cupo.restantes } });
 });

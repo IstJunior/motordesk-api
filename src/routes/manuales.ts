@@ -1,61 +1,67 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { prisma } from "../lib/db.js";
-import { parseR2Manual, type R2Manual } from "../lib/r2-manuals.js";
-import { deleteR2Object, listR2Objects, r2Configured, uploadR2Object } from "../lib/r2.js";
 import { superadminGuard } from "../auth/middleware.js";
+import {
+  borrarManual,
+  catalogo,
+  ManualError,
+  subirManual,
+  TIPOS_DE_MANUAL,
+  type ManualEnDisco,
+} from "../lib/manuales-disco.js";
 
-// Catálogo global de manuales técnicos (superadmin). La fuente de verdad es R2:
-// el taller lee esos mismos objetos, así que subir y borrar aquí opera sobre el
-// bucket. La fila en `technical_manuals` aporta el ID interno del nombre.
+// Catálogo global de manuales técnicos (superadmin).
+//
+// La fuente es el disco del servidor, el mismo que leen los talleres (ver
+// lib/manuales-disco.ts). Antes era R2, que es la copia de contingencia y está
+// atrasada: el superadmin veía 168 manuales de mayo y lo que subía no le
+// llegaba a ningún taller.
 export const manualesRoutes = new Hono();
 manualesRoutes.use("*", superadminGuard);
 
-const R2_MANUALS_PREFIX = "Manuales Colombia Top/";
-const CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_UPLOAD_BYTES = 80 * 1024 * 1024;
+const POR_PAGINA = 50;
 
-let catalogCache: { expiresAt: number; manuals: R2Manual[] } | null = null;
-
-async function loadCatalog(): Promise<R2Manual[]> {
-  if (catalogCache && catalogCache.expiresAt > Date.now()) return catalogCache.manuals;
-  const objects = await listR2Objects(R2_MANUALS_PREFIX);
-  const manuals = objects
-    .map(parseR2Manual)
-    .filter((manual): manual is R2Manual => manual !== null)
-    .sort((a, b) => a.brand.localeCompare(b.brand) || a.model.localeCompare(b.model));
-  catalogCache = { expiresAt: Date.now() + CACHE_TTL_MS, manuals };
-  return manuals;
+function coincide(m: ManualEnDisco, q: string): boolean {
+  if (!q) return true;
+  const n = q.toLocaleLowerCase("es");
+  return [m.brand, m.model, m.title, m.internalId, m.category, m.year?.toString() ?? ""].some((c) =>
+    c.toLocaleLowerCase("es").includes(n),
+  );
 }
 
-function matchesQuery(manual: R2Manual, query: string): boolean {
-  if (!query) return true;
-  const normalized = query.toLocaleLowerCase("es");
-  const fields = [manual.brand, manual.model, manual.title, manual.internalId, manual.year?.toString() ?? ""];
-  return fields.some((field) => field.toLocaleLowerCase("es").includes(normalized));
+function responderError(c: Context, error: unknown, que: string) {
+  if (error instanceof ManualError) return c.json({ error: error.message }, error.status);
+  console.error(`[manuales] ${que}:`, error instanceof Error ? error.message : error);
+  return c.json({ error: `No fue posible ${que}.` }, 500);
 }
 
-function nombreSeguro(valor: string): string {
-  return valor.replace(/[/\\?%*:|"<>]/g, "-").trim();
-}
-
+// GET /manuales?q=&page= — una página del catálogo, con el total y las marcas.
+// Antes devolvía todo de una: con 1.299 manuales eso es una tabla que el
+// navegador tarda en pintar para mostrar las primeras veinte filas.
 manualesRoutes.get("/", async (c) => {
-  if (!r2Configured()) return c.json({ error: "R2 no está configurado en la API" }, 503);
-  const query = (c.req.query("q") ?? "").trim();
+  const q = (c.req.query("q") ?? "").trim();
+  const pagina = Math.max(1, Number(c.req.query("page") ?? "1") || 1);
   try {
-    const manuals = await loadCatalog();
-    return c.json(manuals.filter((manual) => matchesQuery(manual, query)));
+    const todos = await catalogo();
+    const filtrados = todos.filter((m) => coincide(m, q));
+    return c.json({
+      manuales: filtrados.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA),
+      total: filtrados.length,
+      totalBiblioteca: todos.length,
+      marcas: new Set(todos.map((m) => m.brand)).size,
+      pagina,
+      porPagina: POR_PAGINA,
+    });
   } catch (error) {
-    console.error("[manuales] No fue posible listar R2:", error instanceof Error ? error.message : error);
-    return c.json({ error: "No fue posible cargar el catálogo de R2" }, 502);
+    return responderError(c, error, "cargar la biblioteca de manuales");
   }
 });
 
-// POST /manuales — multipart: file (PDF), brand, model, year?, engineType?, category?
-// Sube al bucket con la estructura que espera el catálogo:
-// Manuales Colombia Top/{marca}/{modelo}/{id} - {modelo} - Taller - {año}.pdf
-manualesRoutes.post("/", async (c) => {
-  if (!r2Configured()) return c.json({ error: "R2 no está configurado en la API" }, 503);
+manualesRoutes.get("/meta/tipos", (c) => c.json({ tipos: TIPOS_DE_MANUAL }));
 
+// POST /manuales — multipart: file (PDF), brand, model, year?, type?
+manualesRoutes.post("/", async (c) => {
   const form = await c.req.parseBody().catch(() => null);
   if (!form) return c.json({ error: "Formulario inválido" }, 400);
 
@@ -65,75 +71,38 @@ manualesRoutes.post("/", async (c) => {
   if (file.type && file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
     return c.json({ error: "El manual debe ser un PDF" }, 400);
   }
+  const contenido = Buffer.from(await file.arrayBuffer());
+  // Un PDF empieza con "%PDF": el tipo que manda el navegador se puede falsear.
+  if (contenido.subarray(0, 4).toString("latin1") !== "%PDF") {
+    return c.json({ error: "El archivo no es un PDF válido" }, 400);
+  }
 
-  const brand = nombreSeguro(String(form["brand"] ?? ""));
-  const model = nombreSeguro(String(form["model"] ?? ""));
-  if (!brand || !model) return c.json({ error: "Marca y modelo son obligatorios" }, 400);
-  const yearRaw = Number(String(form["year"] ?? "").trim());
-  const year = Number.isFinite(yearRaw) && yearRaw > 1900 ? Math.trunc(yearRaw) : new Date().getFullYear();
-  const title = String(form["title"] ?? "").trim() || `${model} - Taller`;
-  const slug = title.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-
-  // El registro se crea primero: su id autoincremental es el ID interno que
-  // lleva el nombre del archivo en el bucket.
-  const registro = await prisma.technicalManual.create({
-    data: {
-      title,
-      slug,
-      brand,
-      model,
-      year,
-      engineType: String(form["engineType"] ?? "").trim() || null,
-      category: String(form["category"] ?? "").trim() || "Taller",
-      filePath: "pending",
-      fileSize: 0,
-      mimeType: "",
-      isActive: true,
-    },
-  });
-
-  const paddedId = String(registro.id).padStart(4, "0");
-  const key = `${R2_MANUALS_PREFIX}${brand}/${model}/${paddedId} - ${model} - Taller - ${year}.pdf`;
+  const anioCrudo = Number(String(form["year"] ?? "").trim());
+  const anio = Number.isInteger(anioCrudo) && anioCrudo > 1900 && anioCrudo < 2100 ? anioCrudo : null;
 
   try {
-    const buffer = Buffer.from(await file.arrayBuffer());
-    await uploadR2Object(key, buffer, "application/pdf");
-    await prisma.technicalManual.update({
-      where: { id: registro.id },
-      data: { filePath: key, fileSize: buffer.byteLength, mimeType: "application/pdf" },
+    const manual = await subirManual({
+      contenido,
+      marca: String(form["brand"] ?? ""),
+      modelo: String(form["model"] ?? ""),
+      tipo: String(form["type"] ?? "Taller"),
+      anio,
     });
+    return c.json(manual, 201);
   } catch (error) {
-    // Sin archivo en el bucket el registro no sirve para nada.
-    await prisma.technicalManual.delete({ where: { id: registro.id } }).catch(() => {});
-    console.error("[manuales] Falló la subida a R2:", error instanceof Error ? error.message : error);
-    return c.json({ error: "No fue posible subir el manual a R2" }, 502);
+    return responderError(c, error, "subir el manual");
   }
-
-  catalogCache = null;
-  return c.json({ key, brand, model, year, internalId: paddedId }, 201);
 });
 
-// DELETE /manuales?key=… — borra el objeto del bucket y su fila si existe.
+// DELETE /manuales?key=… — borra el PDF de la biblioteca (y su fila, si la hay).
 manualesRoutes.delete("/", async (c) => {
-  if (!r2Configured()) return c.json({ error: "R2 no está configurado en la API" }, 503);
   const key = (c.req.query("key") ?? "").trim();
-  if (!key.startsWith(R2_MANUALS_PREFIX)) return c.json({ error: "Manual no válido" }, 400);
-
   try {
-    await deleteR2Object(key);
+    await borrarManual(key);
   } catch (error) {
-    console.error("[manuales] Falló el borrado en R2:", error instanceof Error ? error.message : error);
-    return c.json({ error: "No fue posible borrar el manual en R2" }, 502);
+    return responderError(c, error, "borrar el manual");
   }
-  await prisma.technicalManual.deleteMany({ where: { filePath: key } });
-
-  catalogCache = null;
+  // La fila solo existe para la consulta con IA; si había una, ya no apunta a nada.
+  await prisma.technicalManual.deleteMany({ where: { filePath: { endsWith: key } } }).catch(() => {});
   return c.json({ ok: true });
-});
-
-manualesRoutes.get("/:id", async (c) => {
-  const id = BigInt(c.req.param("id"));
-  const m = await prisma.technicalManual.findUnique({ where: { id } });
-  if (!m) return c.json({ error: "No encontrado" }, 404);
-  return c.json(m);
 });
