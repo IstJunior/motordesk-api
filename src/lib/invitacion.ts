@@ -1,5 +1,5 @@
 import { enviarCorreo, correoDisponible, faltantesCorreo } from "./email.js";
-import { bulletList, codeBox, dataTable, note, paragraph, renderEmail } from "./email-template.js";
+import { bulletList, codeBox, dataTable, lead, note, paragraph, renderEmail } from "./email-template.js";
 import { enlaceDefinirPassword } from "./supabase-admin.js";
 
 // Invitación al taller que el proveedor da de alta.
@@ -95,51 +95,51 @@ export async function enviarInvitacionTaller(datos: DatosInvitacion): Promise<Re
   perfil.push(["Responsable", datos.duenoNombre]);
 
   const blocks = [
-    paragraph(`Hola ${datos.duenoNombre},`),
-    paragraph(
-      `Te damos la bienvenida a MotorDesk. Creamos la cuenta de ${datos.taller} y ya está lista para que entres: ` +
-        "aquí vas a manejar los turnos, el historial de tus clientes, el inventario y los cobros, todo en un solo lugar.",
+    lead(
+      `Hola, ${datos.duenoNombre}. Le damos la bienvenida a MotorDesk. Creamos la cuenta de ${datos.taller} y ya está lista para que entre: ` +
+        "aquí va a manejar los turnos, el historial de sus clientes, el inventario y los cobros, todo en un solo lugar.",
     ),
 
-    paragraph("Estos son tus datos para entrar:"),
+    paragraph("Estos son sus datos para entrar:"),
     dataTable(acceso),
     password
-      ? note("Cambia esta contraseña apenas entres, desde tu perfil. Mientras siga escrita en este correo, cualquiera que lo abra puede usarla.")
+      ? note("Cambie esta contraseña apenas entre, desde su perfil. Mientras siga escrita en este correo, cualquiera que lo abra puede usarla.")
       : enlace
-        ? paragraph("Para empezar, define tu contraseña con el botón de abajo. El enlace es de un solo uso.")
+        ? paragraph("Para empezar, defina su contraseña con el botón de abajo. El enlace es de un solo uso.")
         : note(
-            "Para entrar por primera vez, usa “¿Olvidaste tu contraseña?” en la pantalla de acceso " +
-              "con este mismo correo. Te llegará un enlace para definirla.",
+            "Para entrar por primera vez, use “¿Olvidó su contraseña?” en la pantalla de acceso " +
+              "con este mismo correo. Le llegará un enlace para definirla.",
           ),
 
-    codeBox("Código de tu taller", datos.codigo),
-    paragraph("Guarda este código: identifica a tu taller, es único y no cambia. Tu equipo lo necesita para entrar."),
+    codeBox("Código de su taller", datos.codigo),
+    paragraph("Guarde este código: identifica a su taller, es único y no cambia. Su equipo lo necesita para entrar."),
 
-    paragraph("Así quedó registrado tu taller:"),
+    paragraph("Así quedó registrado su taller:"),
     dataTable(perfil),
-    paragraph("Si algo de esto no está bien, lo puedes corregir tú mismo en Ajustes, o respondernos este correo."),
+    paragraph("Si algo de esto no está bien, lo puede corregir usted mismo en Ajustes, o respondernos este correo."),
 
-    paragraph("Cuando entres, lo primero que te va a servir:"),
+    paragraph("Cuando entre, lo primero que le va a servir:"),
     bulletList([
-      "Revisa los servicios y precios que dejamos cargados y ajústalos a los tuyos",
-      "Agrega a tus técnicos y dales su usuario",
-      "Define tus horarios de atención",
-      "Comparte tu página pública para que tus clientes reserven en línea",
+      "Revise los servicios y precios que dejamos cargados y ajústelos a los suyos",
+      "Agregue a sus técnicos y deles su usuario",
+      "Defina sus horarios de atención",
+      "Comparta su página pública para que sus clientes reserven en línea",
     ]),
-    paragraph("Si algo no cuadra o necesitas una mano para arrancar, responde a este correo y te ayudamos."),
+    paragraph("Si algo no cuadra o necesita una mano para arrancar, responda a este correo y le ayudamos."),
   ];
 
   await enviarCorreo({
     to: limpio(datos.enviarA) ?? datos.duenoEmail,
-    subject: `Bienvenido a MotorDesk — ${datos.taller} ya está listo`,
+    subject: `MotorDesk — ${datos.taller} ya está listo`,
     html: renderEmail({
+      eyebrow: "Bienvenida",
       heading: `${datos.taller} ya está en MotorDesk`,
       preheader: password
-        ? "Tu taller está creado. Entra con el correo y la contraseña de adentro."
-        : "Tu taller está creado. Define tu contraseña y entra.",
+        ? "Su taller está creado. Entre con el correo y la contraseña de adentro."
+        : "Su taller está creado. Defina su contraseña y entre.",
       blocks,
       cta: enlace ? { label: "Definir mi contraseña", url: enlace } : { label: "Entrar a mi taller", url: login },
-      footerNote: "Si no esperabas este correo, escríbenos respondiendo a este mensaje.",
+      footerNote: "Si no esperaba este correo, escríbanos respondiendo a este mensaje.",
     }),
   });
 
