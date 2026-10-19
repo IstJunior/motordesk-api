@@ -4,7 +4,7 @@ import { prisma } from "../lib/db.js";
 import { superadminGuard } from "../auth/middleware.js";
 import { normalizarModulos, MODULOS, ETIQUETA_MODULO, esModuloValido } from "../lib/modules.js";
 import { encryptJson, decryptJson } from "../lib/crypto.js";
-import { probarConexion } from "../lib/factus-probe.js";
+import { empresaDeFactus, probarConexion, type EmpresaFactus } from "../lib/factus-probe.js";
 import { probarConexionNextpyme } from "../lib/nextpyme-probe.js";
 import {
   openwaHabilitado,
@@ -754,9 +754,79 @@ talleresRoutes.put("/:id/dian", async (c) => {
     return c.json({ error: e instanceof Error ? e.message : "No se pudo guardar la configuración DIAN" }, 400);
   }
 
+  // Con Factus en producción, el emisor no se teclea: se lee de Factus, que es
+  // quien factura, y se guarda para el encabezado de los comprobantes. En
+  // sandbox no: las credenciales son de la cuenta compartida de Factus y los
+  // comprobantes del taller saldrían a nombre de Factus.
+  let emisor: ReturnType<typeof compararEmisor> | null = null;
+  let avisoEmisor: string | null = null;
+  if (fx && fx.providerEnvironment === "production") {
+    const guardada = await prisma.workshopDianConfig.findUnique({ where: { workshopId: id } });
+    const clientSecret = decryptJson<string>(guardada?.factusClientSecretEnc);
+    const password = decryptJson<string>(guardada?.factusPasswordEnc);
+    const empresa =
+      guardada?.factusClientId && guardada.factusUsername && clientSecret && password
+        ? await empresaDeFactus({
+            ambiente: "production",
+            clientId: guardada.factusClientId,
+            clientSecret,
+            username: guardada.factusUsername,
+            password,
+          })
+        : null;
+    if (empresa) {
+      await prisma.workshopDianConfig.update({
+        where: { workshopId: id },
+        data: {
+          documentType: "31",
+          documentNumber: empresa.nit,
+          dv: empresa.dv,
+          legalName: empresa.nombre || null,
+          personType: empresa.tipoPersona,
+        },
+      });
+      const taller = await prisma.workshop.findUnique({ where: { id }, select: { taxId: true } });
+      emisor = compararEmisor(empresa, taller?.taxId ?? null, "production");
+    } else {
+      avisoEmisor = "No se pudo leer de Factus a nombre de quién factura: el emisor quedó como estaba.";
+    }
+  }
+
   const cfg = await prisma.workshopDianConfig.findUnique({ where: { workshopId: id } });
-  return c.json(sinSecretos(cfg!));
+  return c.json({ ...sinSecretos(cfg!), emisor, avisoEmisor: avisoEmisor ?? emisor?.aviso ?? null });
 });
+
+/**
+ * El emisor que dice Factus contra el número que el taller registró en su
+ * Configuración (el del encabezado de sus comprobantes).
+ *
+ * Con Factus el NIT de la factura es el de la empresa dueña de las
+ * credenciales; MotorDesk no lo manda. Si no coincide con el del taller, o se
+ * pegaron las credenciales de otro taller o el taller tiene mal su número, y
+ * hay que saberlo antes de la primera factura.
+ *
+ * El número del taller puede venir con o sin DV, con puntos o guiones.
+ */
+export function compararEmisor(empresa: EmpresaFactus, taxIdDelTaller: string | null, ambiente: string) {
+  const delTaller = (taxIdDelTaller ?? "").replace(/\D/g, "");
+  const coincide = delTaller
+    ? delTaller === empresa.nit || delTaller === `${empresa.nit}${empresa.dv ?? ""}`
+    : null;
+  const nitLegible = `${empresa.nit}${empresa.dv ? `-${empresa.dv}` : ""}`;
+  let aviso: string | null = null;
+  if (ambiente !== "production") {
+    aviso =
+      `En sandbox las credenciales son de la cuenta compartida de Factus (${nitLegible}, ${empresa.nombre}): ` +
+      "el emisor del taller no se toma de ahí. Se tomará al guardar con credenciales de producción.";
+  } else if (coincide === null) {
+    aviso = `El taller no tiene número de identificación en su Configuración. Factus factura a nombre de ${nitLegible} (${empresa.nombre}).`;
+  } else if (!coincide) {
+    aviso =
+      `Estas credenciales son de ${nitLegible} (${empresa.nombre}), pero el taller registró ${taxIdDelTaller}. ` +
+      "Revisa que no sean las credenciales de otro taller antes de facturar.";
+  }
+  return { empresa, nit: nitLegible, coincide, aviso };
+}
 
 // POST /talleres/:id/dian/probar — Factus: pide token y lista sus rangos.
 // Nextpyme: valida el token y coteja el catálogo de unidades.
@@ -819,7 +889,9 @@ talleresRoutes.post("/:id/dian/probar", async (c) => {
     username,
     password,
   });
-  return c.json(r);
+  if (!r.ok || !r.empresa) return c.json(r);
+  const taller = await prisma.workshop.findUnique({ where: { id }, select: { taxId: true } });
+  return c.json({ ...r, emisor: compararEmisor(r.empresa, taller?.taxId ?? null, d.providerEnvironment) });
 });
 
 // Los respaldos viven en /backups (ver routes/backups.ts). Se deja el redirect

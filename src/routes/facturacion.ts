@@ -297,8 +297,12 @@ async function paqueteDe(c: { req: { param: (k: string) => string | undefined } 
 
 // POST /facturacion/talleres/:id/paquetes/:paqueteId/activar
 //
-// Arranca los doce meses. Si el taller tiene un año en curso, este empieza
-// cuando aquel termina: renovar antes de tiempo no le quita días.
+// Arranca los doce meses hoy. Si el taller tiene un año en curso, ese año se
+// cierra hoy y sus documentos sobrantes no pasan al nuevo: así lo maneja
+// Factus ("un nuevo plan reinicia el conteo con la nueva cantidad" y "la
+// vigencia empieza con la nueva activación"), y MotorDesk no puede prometer
+// algo distinto de lo que compra. Para renovar sin perder días, se activa
+// cuando el año en curso vence.
 facturacionRoutes.post("/talleres/:id/paquetes/:paqueteId/activar", async (c) => {
   const p = await paqueteDe(c);
   if (!p) return c.json({ error: "Paquete no encontrado" }, 404);
@@ -322,18 +326,33 @@ facturacionRoutes.post("/talleres/:id/paquetes/:paqueteId/activar", async (c) =>
     where: { workshopId: p.workshopId, anuladoEl: null, activadoEl: { lte: ahora }, venceEl: { gt: ahora } },
     orderBy: { venceEl: "desc" },
   });
-  const inicio = enCurso?.venceEl ?? ahora;
+  const inicio = ahora;
   const vence = sumarMeses(inicio, 12);
 
-  await prisma.paqueteDeFacturacion.update({
-    where: { id: p.id },
-    data: {
-      activadoEl: inicio,
-      venceEl: vence,
-      notas: anotar(p.notas, enCurso ? `activado; empieza al vencer el año en curso` : "activado"),
-    },
+  await prisma.$transaction([
+    ...(enCurso
+      ? [
+          prisma.paqueteDeFacturacion.update({
+            where: { id: enCurso.id },
+            data: { venceEl: ahora, notas: anotar(enCurso.notas, `cerrado al activar el paquete ${p.id}`) },
+          }),
+        ]
+      : []),
+    prisma.paqueteDeFacturacion.update({
+      where: { id: p.id },
+      data: {
+        activadoEl: inicio,
+        venceEl: vence,
+        notas: anotar(p.notas, enCurso ? `activado; reemplaza al paquete ${enCurso.id}` : "activado"),
+      },
+    }),
+  ]);
+  return c.json({
+    ok: true,
+    activadoEl: inicio.toISOString(),
+    venceEl: vence.toISOString(),
+    reemplazo: enCurso ? String(enCurso.id) : null,
   });
-  return c.json({ ok: true, activadoEl: inicio.toISOString(), venceEl: vence.toISOString() });
 });
 
 const ampliarSchema = z.object({
@@ -343,8 +362,10 @@ const ampliarSchema = z.object({
   notas: z.string().trim().max(500).nullable().optional(),
 });
 
-// POST /facturacion/talleres/:id/paquetes/:paqueteId/ampliar — pasar a un
-// nivel mayor sin mover las fechas: la diferencia se paga, el año sigue igual.
+// POST /facturacion/talleres/:id/paquetes/:paqueteId/ampliar — asignarle más
+// documentos sin mover las fechas. Solo en modo bolsa, donde los documentos
+// los reparte MotorDesk. En paquete individual no existe: Factus no amplía un
+// paquete, se compra uno nuevo con su propio año.
 facturacionRoutes.post("/talleres/:id/paquetes/:paqueteId/ampliar", async (c) => {
   const p = await paqueteDe(c);
   if (!p) return c.json({ error: "Paquete no encontrado" }, 404);
@@ -352,6 +373,20 @@ facturacionRoutes.post("/talleres/:id/paquetes/:paqueteId/ampliar", async (c) =>
   if (!parsed.success) return c.json({ error: primerError(parsed.error) }, 400);
   const d = parsed.data;
 
+  const cfg = await prisma.workshopDianConfig.findUnique({
+    where: { workshopId: p.workshopId },
+    select: { cupoModalidad: true },
+  });
+  if (cfg?.cupoModalidad !== "bolsa") {
+    return c.json(
+      {
+        error:
+          "En paquete individual no se amplía: Factus vende un paquete nuevo, con su propio año. " +
+          "Registra el pago del nuevo paquete y actívalo.",
+      },
+      409,
+    );
+  }
   const estado = estadoDePaquete(p);
   if (estado !== "activo" && estado !== "por_activar") {
     return c.json({ error: "Solo se amplía un paquete activo o por activar." }, 409);
@@ -420,5 +455,10 @@ facturacionRoutes.post("/talleres/:id/factus", async (c) => {
     password,
   });
   const cupo = await cupoDeTaller(id);
-  return c.json({ ...r, ambiente, motordesk: { usados: cupo.usados.total, restantes: cupo.restantes } });
+  const vigente = cupo.paquetes.find((p) => p.id === cupo.vigente);
+  return c.json({
+    ...r,
+    ambiente,
+    motordesk: { usados: cupo.usados.total, restantes: cupo.restantes, documentos: vigente?.documentos ?? null },
+  });
 });

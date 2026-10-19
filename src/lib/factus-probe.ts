@@ -35,9 +35,65 @@ export type Rango = {
   vencido: boolean;
 };
 
+/** La empresa dueña de las credenciales, según Factus: a nombre de quién factura. */
+export type EmpresaFactus = {
+  nit: string;
+  dv: string | null;
+  nombre: string;
+  tipoPersona: "natural" | "juridica";
+};
+
 export type ResultadoDePrueba =
-  | { ok: true; ambiente: Ambiente; rangos: Rango[] }
+  | { ok: true; ambiente: Ambiente; rangos: Rango[]; empresa: EmpresaFactus | null }
   | { ok: false; error: string };
+
+/**
+ * `GET /v2/companies`: el NIT, DV y nombre de la empresa de esas credenciales.
+ *
+ * MotorDesk no le dice a Factus a nombre de quién facturar: factura la empresa
+ * dueña de las credenciales. Por eso el emisor se lee de aquí y no se teclea,
+ * y por eso compararlo con el NIT del taller es lo que delata unas
+ * credenciales pegadas en el taller equivocado.
+ *
+ * `null` si no responde: una prueba de conexión no falla por esto.
+ */
+async function empresaConToken(cred: Credenciales, acceso: string): Promise<EmpresaFactus | null> {
+  try {
+    const r = await fetch(`${BASES[cred.ambiente]}/v2/companies`, {
+      headers: { Authorization: `Bearer ${acceso}`, Accept: "application/json" },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!r.ok) return null;
+    const j = (await r.json().catch(() => null)) as { data?: Record<string, unknown> } | null;
+    const d = j?.data;
+    if (!d?.nit) return null;
+    const texto = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+    const organizacion = (d.legal_organization as { code?: string } | undefined)?.code;
+    const nombre =
+      texto(d.company) ||
+      [texto(d.names), texto(d.surnames)].filter(Boolean).join(" ") ||
+      texto(d.graphic_representation_name) ||
+      texto(d.trade_name);
+    return {
+      nit: String(d.nit).replace(/\D/g, ""),
+      dv: d.dv === null || d.dv === undefined || d.dv === "" ? null : String(d.dv),
+      nombre,
+      // En la tabla de Factus: 1 = persona jurídica, 2 = persona natural.
+      tipoPersona: String(organizacion) === "1" ? "juridica" : "natural",
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** La empresa de unas credenciales, pidiendo su propio token. */
+export async function empresaDeFactus(cred: Credenciales): Promise<EmpresaFactus | null> {
+  try {
+    return await empresaConToken(cred, await token(cred));
+  } catch {
+    return null;
+  }
+}
 
 const siNo = (v: unknown) => v === 1 || v === true;
 
@@ -92,7 +148,7 @@ export async function probarConexion(cred: Credenciales): Promise<ResultadoDePru
       activo: siNo(f.is_active),
       vencido: siNo(f.is_expired),
     }));
-    return { ok: true, ambiente: cred.ambiente, rangos };
+    return { ok: true, ambiente: cred.ambiente, rangos, empresa: await empresaConToken(cred, acceso) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "No se pudo contactar a Factus." };
   }
