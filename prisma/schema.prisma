@@ -1370,12 +1370,17 @@ model ChatSession {
   seenAt          DateTime? @map("seen_at") @db.Timestamptz(6)
   closedAt        DateTime? @map("closed_at") @db.Timestamptz(6)
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// "web" (el chat de la landing) | "whatsapp" (escribió al número de MotorDesk).
+  canal           String    @default("web") @db.VarChar(16)
+  /// El chat de WhatsApp al que se responde, tal cual: "57300…@c.us" o "…@lid".
+  whatsappChatId  String?   @map("whatsapp_chat_id") @db.VarChar(64)
 
   workshop Workshop?     @relation(fields: [workshopId], references: [id])
   messages ChatMessage[]
 
   @@index([lastAt])
   @@index([status, lastAt])
+  @@index([whatsappChatId])
   @@index([workshopId])
   @@map("chat_sessions")
 }

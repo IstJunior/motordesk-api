@@ -114,22 +114,56 @@ chatRoutes.post("/webhook", async (c) => {
     return c.json({ ok: true });
   }
 
-  // Sesión leads → respuesta del proveedor: rutea por #<8hex> o a la más reciente.
+  // Sesión leads: el número de WhatsApp de MotorDesk.
+  //
+  // Con el tag #<8hex> al inicio es MotorDesk respondiendo a un lead del widget
+  // desde el celular (el esquema anterior, que se conserva). Todo lo demás es
+  // alguien escribiéndole a MotorDesk —un anuncio, la landing, un referido— y
+  // es un lead propio en la bandeja.
+  //
+  // Antes todo caía en "la conversación más reciente" como si lo hubiera escrito
+  // MotorDesk: el mensaje de un desconocido le aparecía a otro visitante del
+  // widget, y quien escribía por WhatsApp no aparecía en ningún lado.
   const m = texto.match(/^#([0-9a-f]{8})\b[:\s]*/i);
-  let sid: string | null = null;
-  let cuerpo = texto;
   if (m) {
-    cuerpo = texto.slice(m[0].length).trim() || texto;
+    const cuerpo = texto.slice(m[0].length).trim() || texto;
     const s = await prisma.$queryRaw<Array<{ id: string }>>`
-      SELECT id::text FROM chat_sessions WHERE id::text LIKE ${m[1].toLowerCase() + "%"} LIMIT 1`;
-    sid = s[0]?.id ?? null;
+      SELECT id::text FROM chat_sessions WHERE id::text LIKE ${m[1].toLowerCase() + "%"} AND workshop_id IS NULL LIMIT 1`;
+    const sid = s[0]?.id ?? null;
+    if (sid) {
+      await prisma.chatMessage.create({ data: { sessionId: sid, sender: "proveedor", text: cuerpo } });
+      await prisma.chatSession.update({ where: { id: sid }, data: { lastAt: new Date() } });
+    }
+    return c.json({ ok: true });
   }
-  if (!sid) {
-    const s = await prisma.chatSession.findFirst({ orderBy: { lastAt: "desc" }, select: { id: true } });
-    sid = s?.id ?? null;
+
+  // El chat tal cual llega (`…@c.us` o `…@lid`): con eso se le responde. Los
+  // grupos y los estados no son leads.
+  const chatId = String(d.chatId ?? d.from ?? "").trim();
+  if (!chatId || chatId.endsWith("@g.us") || chatId.startsWith("status@")) return c.json({ ok: true });
+  const nombre =
+    String(d.pushName ?? d.notifyName ?? d.chatName ?? d.senderName ?? "")
+      .replace(/^~\s*/, "")
+      .trim()
+      .slice(0, 120) || null;
+  const telefono = chatId.endsWith("@c.us") ? chatId.replace(/\D/g, "").slice(0, 40) : null;
+
+  let sesion = await prisma.chatSession.findFirst({
+    where: { workshopId: null, whatsappChatId: chatId },
+    orderBy: { lastAt: "desc" },
+    select: { id: true, name: true },
+  });
+  if (!sesion) {
+    sesion = await prisma.chatSession.create({
+      data: { canal: "whatsapp", whatsappChatId: chatId, phone: telefono, name: nombre },
+      select: { id: true, name: true },
+    });
   }
-  if (!sid) return c.json({ ok: true });
-  await prisma.chatMessage.create({ data: { sessionId: sid, sender: "proveedor", text: cuerpo } });
-  await prisma.chatSession.update({ where: { id: sid }, data: { lastAt: new Date() } });
+  await prisma.chatMessage.create({ data: { sessionId: sesion.id, sender: "visitante", text: texto } });
+  // Si la había cerrado, vuelve a la bandeja: escribió otra vez.
+  await prisma.chatSession.update({
+    where: { id: sesion.id },
+    data: { lastAt: new Date(), status: "active", closedAt: null, ...(nombre && !sesion.name ? { name: nombre } : {}) },
+  });
   return c.json({ ok: true });
 });

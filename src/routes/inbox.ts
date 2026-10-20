@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/db.js";
 import { superadminGuard } from "../auth/middleware.js";
 import { UUID_RE } from "../lib/chat-notify.js";
+import { enviarTextoAChat, openwaHabilitado, SESION_LEADS } from "../lib/openwa.js";
 
 // Bandeja del proveedor: SOLO los leads de la landing (`workshop_id IS NULL`).
 //
@@ -32,7 +33,7 @@ async function noLeidos(sessionId: string, seenAt: Date | null): Promise<number>
 async function leadONada(sid: string) {
   return prisma.chatSession.findFirst({
     where: { id: sid, ...SOLO_LEADS },
-    select: { id: true },
+    select: { id: true, canal: true, whatsappChatId: true },
   });
 }
 
@@ -48,6 +49,7 @@ inboxRoutes.get("/", async (c) => {
       phone: true,
       seenAt: true,
       lastAt: true,
+      canal: true,
       messages: { orderBy: { id: "desc" }, take: 1, select: { text: true } },
       _count: { select: { messages: true } },
     },
@@ -58,6 +60,7 @@ inboxRoutes.get("/", async (c) => {
       id: s.id,
       nombre: s.name,
       telefono: s.phone,
+      canal: s.canal,
       workshopId: null,
       workshopNombre: null,
       ultimo: s.messages[0]?.text ?? null,
@@ -103,7 +106,20 @@ inboxRoutes.post("/:sid", async (c) => {
     .object({ texto: z.string().trim().min(1).max(2000) })
     .safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "Datos inválidos" }, 400);
-  if (!(await leadONada(sid))) return c.json({ error: "No encontrada" }, 404);
+  const lead = await leadONada(sid);
+  if (!lead) return c.json({ error: "No encontrada" }, 404);
+
+  // A quien escribió por WhatsApp se le responde por WhatsApp. Si no sale, no
+  // se guarda: la bandeja no puede mostrar como enviado algo que no le llegó.
+  if (lead.canal === "whatsapp" && lead.whatsappChatId) {
+    if (!openwaHabilitado()) return c.json({ error: "El WhatsApp de MotorDesk no está configurado." }, 503);
+    try {
+      await enviarTextoAChat(SESION_LEADS, lead.whatsappChatId, parsed.data.texto);
+    } catch (e) {
+      console.error("bandeja: no salió por WhatsApp:", e instanceof Error ? e.message : e);
+      return c.json({ error: "No se pudo enviar por WhatsApp. Revise que la sesión esté conectada." }, 502);
+    }
+  }
 
   const msg = await prisma.chatMessage.create({
     data: { sessionId: sid, sender: "proveedor", text: parsed.data.texto },

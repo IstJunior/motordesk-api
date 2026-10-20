@@ -128,6 +128,18 @@ export async function registrarWebhook(nombre: string, url: string, secret: stri
   });
 }
 
+/**
+ * Responde en un chat que ya existe, con su id tal cual (`…@c.us` o `…@lid`).
+ *
+ * Hace falta además de `enviarTexto`: quien escribe desde un anuncio suele llegar
+ * con un identificador privado (`@lid`) en vez de su número, y ese id no se puede
+ * reconstruir a partir de un teléfono.
+ */
+export async function enviarTextoAChat(nombre: string, chatId: string, text: string): Promise<void> {
+  const id = await sesionId(nombre);
+  await api(`/api/sessions/${id}/messages/send-text`, { method: "POST", body: { chatId, text } });
+}
+
 export async function enviarTexto(nombre: string, numero: string, text: string): Promise<void> {
   const id = await sesionId(nombre);
   const chatId = `${numero.replace(/\D/g, "")}@c.us`;
