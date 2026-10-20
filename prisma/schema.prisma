@@ -227,6 +227,9 @@ model InventoryItem {
   unit             String    @default("unidad") @db.VarChar(50)
   costPrice        Decimal   @default(0) @map("cost_price") @db.Decimal(12, 2)
   stockQuantity    Decimal   @default(0) @map("stock_quantity") @db.Decimal(12, 3)
+  /// Lo que trae un envase, en la unidad del artículo (1,2 L). Lo usa el
+  /// formulario de inventario del monolito; acá solo viaja en los respaldos.
+  contenidoEnvase  Decimal?  @map("contenido_envase") @db.Decimal(12, 3)
   minStockQuantity Decimal   @default(0) @map("min_stock_quantity") @db.Decimal(12, 3)
   serialNumber     String?   @map("serial_number") @db.VarChar(120)
   storageLocation  String?   @map("storage_location") @db.VarChar(180)
