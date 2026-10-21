@@ -10,7 +10,7 @@ import { manualesRoutes } from "./routes/manuales.js";
 import { vehiculosRoutes } from "./routes/vehiculos.js";
 import { inboxRoutes } from "./routes/inbox.js";
 import { chatRoutes } from "./routes/chat.js";
-import { whatsappRoutes } from "./routes/whatsapp.js";
+import { asegurarWebhookDeLeads, whatsappRoutes } from "./routes/whatsapp.js";
 import { tenantRoutes } from "./routes/tenant.js";
 import { backupsRoutes } from "./routes/backups.js";
 import { auditoriaRoutes } from "./routes/auditoria.js";
@@ -92,4 +92,6 @@ const port = Number(process.env.PORT ?? 3000);
 serve({ fetch: app.fetch, port }, (info) => {
   console.log(`motordesk-api escuchando en :${info.port}`);
   void iniciarBackupProgramado();
+  // Si el webhook del número de MotorDesk quedó con eventos de antes, se pone al día.
+  void asegurarWebhookDeLeads();
 });

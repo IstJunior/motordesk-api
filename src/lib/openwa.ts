@@ -117,14 +117,29 @@ export async function estadoSesion(nombre: string): Promise<{ status: string; qr
   return { status, qr };
 }
 
-export async function registrarWebhook(nombre: string, url: string, secret: string): Promise<void> {
+/**
+ * Deja el webhook de la sesión apuntando a `url` con exactamente esos eventos.
+ * Si ya existe con otros eventos, los actualiza: así un despliegue que agrega
+ * un evento no exige borrar y volver a crear el webhook a mano.
+ */
+export async function registrarWebhook(
+  nombre: string,
+  url: string,
+  secret: string,
+  events: string[] = ["message.received"],
+): Promise<void> {
   const id = await sesionId(nombre);
-  const existentes = await api<Array<{ url: string }>>(`/api/sessions/${id}/webhooks`).catch(() => []);
+  const existentes = await api<Array<{ id: string; url: string; events?: string[] }>>(`/api/sessions/${id}/webhooks`).catch(() => []);
   const lista = Array.isArray(existentes) ? existentes : [];
-  if (lista.some((w) => w.url === url)) return;
+  const actual = lista.find((w) => w.url === url);
+  if (actual) {
+    const iguales = [...(actual.events ?? [])].sort().join() === [...events].sort().join();
+    if (!iguales) await api(`/api/sessions/${id}/webhooks/${actual.id}`, { method: "PUT", body: { events } });
+    return;
+  }
   await api(`/api/sessions/${id}/webhooks`, {
     method: "POST",
-    body: { url, events: ["message.received"], secret },
+    body: { url, events, secret },
   });
 }
 

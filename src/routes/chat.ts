@@ -75,6 +75,31 @@ chatRoutes.get("/:sid", rateLimit({ max: 240, ventanaMs: 60_000 }), async (c) =>
   return c.json(filas.map((m) => ({ id: m.id, de: m.sender, texto: m.text, creadoAt: m.createdAt })));
 });
 
+// Lo que se guarda de un mensaje de WhatsApp. Una nota de voz o una foto no
+// traen texto, pero son parte de la conversación: sin una marca, la bandeja
+// mostraba respuestas a mensajes que no aparecían.
+const MARCAS: Record<string, string> = {
+  voice: "🎤 Nota de voz",
+  ptt: "🎤 Nota de voz",
+  audio: "🎵 Audio",
+  image: "📷 Imagen",
+  video: "🎬 Video",
+  document: "📄 Documento",
+  sticker: "Sticker",
+  location: "📍 Ubicación",
+  contact: "👤 Contacto",
+  vcard: "👤 Contacto",
+};
+
+function textoDelMensaje(d: Record<string, unknown>, texto: string): string | null {
+  const tipo = String(d.type ?? "");
+  if (tipo === "revoked") return null;
+  const marca = MARCAS[tipo];
+  if (!marca) return texto || null;
+  // La foto o el video con pie de foto: la marca y el texto.
+  return texto ? `${marca}: ${texto}` : `[${marca}]`;
+}
+
 // POST /chat/webhook?token=... — inbound de OpenWA (multi-sesión).
 //  - sesión leads (motordesk): respuesta del proveedor → rutea al widget por #tag.
 //  - sesión de un taller (taller-<code>): mensaje de un CLIENTE → bandeja del taller.
@@ -91,10 +116,12 @@ chatRoutes.post("/webhook", async (c) => {
   const fromMe = Boolean(d.fromMe);
   const remitente = String(d.sender ?? d.from ?? d.chatId ?? "").replace(/\D/g, "");
   const texto = String(d.text ?? d.body ?? d.message ?? "").trim();
-  if ((evento && evento !== "message.received") || fromMe || !texto) return c.json({ ok: true });
+  const enviado = evento === "message.sent";
+  if (evento && evento !== "message.received" && !enviado) return c.json({ ok: true });
 
   // Sesión de taller → mensaje entrante de un cliente del taller.
   if (sessionName && sessionName !== SESION_LEADS && sessionName.startsWith("taller-")) {
+    if (enviado || fromMe || !texto) return c.json({ ok: true });
     const w = await prisma.workshop.findFirst({ where: { whatsappSession: sessionName }, select: { id: true } });
     if (!w) return c.json({ ok: true });
     // Reusa/crea la conversación del cliente (por teléfono) en ese taller.
@@ -124,7 +151,7 @@ chatRoutes.post("/webhook", async (c) => {
   // Antes todo caía en "la conversación más reciente" como si lo hubiera escrito
   // MotorDesk: el mensaje de un desconocido le aparecía a otro visitante del
   // widget, y quien escribía por WhatsApp no aparecía en ningún lado.
-  const m = texto.match(/^#([0-9a-f]{8})\b[:\s]*/i);
+  const m = enviado || fromMe ? null : texto.match(/^#([0-9a-f]{8})\b[:\s]*/i);
   if (m) {
     const cuerpo = texto.slice(m[0].length).trim() || texto;
     const s = await prisma.$queryRaw<Array<{ id: string }>>`
@@ -138,32 +165,72 @@ chatRoutes.post("/webhook", async (c) => {
   }
 
   // El chat tal cual llega (`…@c.us` o `…@lid`): con eso se le responde. Los
-  // grupos y los estados no son leads.
-  const chatId = String(d.chatId ?? d.from ?? "").trim();
+  // grupos y los estados no son leads. En lo que sale, `chatId` es el otro.
+  const chatId = String(d.chatId ?? (enviado || fromMe ? d.to : d.from) ?? "").trim();
   if (!chatId || chatId.endsWith("@g.us") || chatId.startsWith("status@")) return c.json({ ok: true });
+  const contenido = textoDelMensaje(d, texto);
+  if (!contenido) return c.json({ ok: true });
+
+  // Lo que MotorDesk le escribe a alguien desde el celular. Va a su
+  // conversación, si la tiene: escribirle a un contacto no lo vuelve un lead.
+  if (enviado || fromMe) {
+    const sesion = await prisma.chatSession.findFirst({
+      where: { workshopId: null, whatsappChatId: chatId },
+      orderBy: { lastAt: "desc" },
+      select: { id: true },
+    });
+    if (!sesion) return c.json({ ok: true });
+    // Lo contestado desde la bandeja ya se guardó al enviarlo, y OpenWA lo
+    // devuelve como enviado: no se repite.
+    const yaEsta = await prisma.chatMessage.findFirst({
+      where: { sessionId: sesion.id, sender: "proveedor", text: contenido, createdAt: { gte: new Date(Date.now() - 10 * 60_000) } },
+      select: { id: true },
+    });
+    if (yaEsta) return c.json({ ok: true });
+    await prisma.chatMessage.create({ data: { sessionId: sesion.id, sender: "proveedor", text: contenido } });
+    await prisma.chatSession.update({ where: { id: sesion.id }, data: { lastAt: new Date() } });
+    return c.json({ ok: true });
+  }
+
+  // OpenWA trae el nombre en `contact` y, para un `@lid`, el número real en
+  // `senderPhone`. Sin leerlos, toda conversación salía "Visitante" y parecía
+  // que cada mensaje abría un chat nuevo.
+  const contacto = (d.contact ?? {}) as Record<string, unknown>;
   const nombre =
-    String(d.pushName ?? d.notifyName ?? d.chatName ?? d.senderName ?? "")
+    String(contacto.pushName ?? contacto.name ?? d.pushName ?? d.notifyName ?? d.chatName ?? d.senderName ?? "")
       .replace(/^~\s*/, "")
       .trim()
       .slice(0, 120) || null;
-  const telefono = chatId.endsWith("@c.us") ? chatId.replace(/\D/g, "").slice(0, 40) : null;
+  const telefono =
+    (chatId.endsWith("@c.us") ? chatId : String(d.senderPhone ?? contacto.number ?? "")).replace(/\D/g, "").slice(0, 40) || null;
 
+  // La misma persona puede llegar unas veces con su número y otras con su `@lid`:
+  // con el teléfono se reconoce y sigue en su misma conversación.
   let sesion = await prisma.chatSession.findFirst({
-    where: { workshopId: null, whatsappChatId: chatId },
+    where: {
+      workshopId: null,
+      OR: [{ whatsappChatId: chatId }, ...(telefono ? [{ canal: "whatsapp", phone: telefono }] : [])],
+    },
     orderBy: { lastAt: "desc" },
-    select: { id: true, name: true },
+    select: { id: true, name: true, phone: true },
   });
   if (!sesion) {
     sesion = await prisma.chatSession.create({
       data: { canal: "whatsapp", whatsappChatId: chatId, phone: telefono, name: nombre },
-      select: { id: true, name: true },
+      select: { id: true, name: true, phone: true },
     });
   }
-  await prisma.chatMessage.create({ data: { sessionId: sesion.id, sender: "visitante", text: texto } });
+  await prisma.chatMessage.create({ data: { sessionId: sesion.id, sender: "visitante", text: contenido } });
   // Si la había cerrado, vuelve a la bandeja: escribió otra vez.
   await prisma.chatSession.update({
     where: { id: sesion.id },
-    data: { lastAt: new Date(), status: "active", closedAt: null, ...(nombre && !sesion.name ? { name: nombre } : {}) },
+    data: {
+      lastAt: new Date(),
+      status: "active",
+      closedAt: null,
+      ...(nombre && !sesion.name ? { name: nombre } : {}),
+      ...(telefono && !sesion.phone ? { phone: telefono } : {}),
+    },
   });
   return c.json({ ok: true });
 });

@@ -109,22 +109,32 @@ inboxRoutes.post("/:sid", async (c) => {
   const lead = await leadONada(sid);
   if (!lead) return c.json({ error: "No encontrada" }, 404);
 
-  // A quien escribió por WhatsApp se le responde por WhatsApp. Si no sale, no
-  // se guarda: la bandeja no puede mostrar como enviado algo que no le llegó.
-  if (lead.canal === "whatsapp" && lead.whatsappChatId) {
-    if (!openwaHabilitado()) return c.json({ error: "El WhatsApp de MotorDesk no está configurado." }, 503);
-    try {
-      await enviarTextoAChat(SESION_LEADS, lead.whatsappChatId, parsed.data.texto);
-    } catch (e) {
-      console.error("bandeja: no salió por WhatsApp:", e instanceof Error ? e.message : e);
-      return c.json({ error: "No se pudo enviar por WhatsApp. Revise que la sesión esté conectada." }, 502);
-    }
-  }
-
+  // Se guarda antes de enviar: OpenWA devuelve lo enviado por el webhook
+  // (`message.sent`) y, si llegara primero, el webhook no tendría con qué
+  // reconocerlo y lo guardaría dos veces.
   const msg = await prisma.chatMessage.create({
     data: { sessionId: sid, sender: "proveedor", text: parsed.data.texto },
     select: { id: true, sender: true, text: true, createdAt: true },
   });
+
+  // A quien escribió por WhatsApp se le responde por WhatsApp. Si no sale, no
+  // se guarda: la bandeja no puede mostrar como enviado algo que no le llegó.
+  if (lead.canal === "whatsapp" && lead.whatsappChatId) {
+    const error = !openwaHabilitado()
+      ? { texto: "El WhatsApp de MotorDesk no está configurado.", status: 503 as const }
+      : await enviarTextoAChat(SESION_LEADS, lead.whatsappChatId, parsed.data.texto).then(
+          () => null,
+          (e) => {
+            console.error("bandeja: no salió por WhatsApp:", e instanceof Error ? e.message : e);
+            return { texto: "No se pudo enviar por WhatsApp. Revise que la sesión esté conectada.", status: 502 as const };
+          },
+        );
+    if (error) {
+      await prisma.chatMessage.delete({ where: { id: msg.id } }).catch(() => {});
+      return c.json({ error: error.texto }, error.status);
+    }
+  }
+
   await prisma.chatSession.update({
     where: { id: sid },
     data: { lastAt: new Date(), seenAt: new Date() },
