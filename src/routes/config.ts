@@ -13,6 +13,7 @@ import {
 } from "../lib/correo-config.js";
 import { transporteDe } from "../lib/email.js";
 import { renderEmail, paragraph } from "../lib/email-template.js";
+import { CLAVE_CONTRATO, MAX_BYTES_FIRMA, configContrato } from "../lib/contrato-config.js";
 
 // Configuración global (superadmin): ajustes de plataforma + proveedores de IA.
 export const configRoutes = new Hono();
@@ -282,4 +283,85 @@ configRoutes.post("/smtp/prueba", async (c) => {
   }
 
   return c.json({ ok: true, a: parsed.data.to, origen });
+});
+
+// --- Contrato de los talleres ---
+//
+// Los datos del prestador (EL PRESTADOR en el contrato). Viven en
+// `system_settings` bajo `contrato_taller`, la clave que lee el monolito
+// (`src/lib/legal/firma-electronica.ts`): corregir un dato no exige tocar
+// Coolify ni redesplegar. Mientras no haya fila, el monolito sigue leyendo las
+// variables CONTRATO_* del entorno.
+//
+// A quién se le pide firmar no se decide aquí: es un interruptor por taller, en
+// su detalle (PUT /talleres/:id/contrato).
+
+async function estadoContrato() {
+  const { config, guardado } = await configContrato();
+  // Crudo: el esquema de la API no trae el contrato, que es del monolito.
+  const [cuentas] = await prisma.$queryRaw<{ requeridos: bigint; firmados: bigint }[]>`
+    SELECT (SELECT count(*) FROM workshops WHERE contrato_requerido) AS requeridos,
+           (SELECT count(*) FROM contratos_firmados) AS firmados`;
+  const faltan = [!config.nombre && "nombre del prestador", !config.documento && "documento del prestador"].filter(
+    (x): x is string => Boolean(x),
+  );
+  return {
+    valores: { nombre: config.nombre, documento: config.documento, direccion: config.direccion },
+    // La imagen vuelve entera para la vista previa: es la firma que ya sale en
+    // cada PDF, no un secreto.
+    firmaPng: config.firmaPng ? `data:image/png;base64,${config.firmaPng}` : null,
+    origen: guardado ? "panel" : "entorno",
+    faltan,
+    // Con los datos completos los talleres marcados pueden firmar. El monolito
+    // exige además que el texto no sea borrador, y eso vive en el código.
+    listo: faltan.length === 0,
+    talleresObligados: Number(cuentas?.requeridos ?? 0),
+    contratosFirmados: Number(cuentas?.firmados ?? 0),
+  };
+}
+
+/** "data:image/png;base64,…" o el base64 suelto → base64, si de verdad es un PNG. */
+function leerPng(valor: string): string | null {
+  const b64 = valor.trim().replace(/^data:image\/png;base64,/, "");
+  if (!/^[A-Za-z0-9+/=]+$/.test(b64)) return null;
+  const png = Buffer.from(b64, "base64");
+  if (png.length < 100 || png.length > MAX_BYTES_FIRMA || png.readUInt32BE(0) !== 0x89504e47) return null;
+  return b64;
+}
+
+configRoutes.get("/contrato", async (c) => c.json(await estadoContrato()));
+
+const contratoSchema = z.object({
+  nombre: z.string().trim().max(160),
+  documento: z.string().trim().max(40),
+  direccion: z.string().trim().max(255).default(""),
+  // undefined = conservar la guardada; null = quitarla; texto = PNG nuevo.
+  firmaPng: z.string().max(MAX_BYTES_FIRMA * 2).nullable().optional(),
+});
+
+configRoutes.put("/contrato", async (c) => {
+  const parsed = contratoSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" }, 400);
+  const d = parsed.data;
+
+  // Sin nombre o documento, el monolito deja de pedir el contrato aun a los
+  // talleres marcados: nadie queda bloqueado frente a un contrato que no se puede firmar.
+
+  let firmaPng = (await configContrato()).config.firmaPng;
+  if (d.firmaPng === null) firmaPng = null;
+  else if (typeof d.firmaPng === "string") {
+    const leida = leerPng(d.firmaPng);
+    if (!leida) return c.json({ error: "La firma tiene que ser una imagen PNG de menos de 400 KB." }, 400);
+    firmaPng = leida;
+  }
+
+  const value = { nombre: d.nombre, documento: d.documento, direccion: d.direccion, firmaPng };
+  const now = new Date();
+  await prisma.systemSetting.upsert({
+    where: { key: CLAVE_CONTRATO },
+    create: { key: CLAVE_CONTRATO, value, type: "json", group: "legal", createdAt: now, updatedAt: now },
+    update: { value, type: "json", group: "legal", updatedAt: now },
+  });
+
+  return c.json(await estadoContrato());
 });

@@ -37,6 +37,7 @@ import { crearTaller } from "../lib/crear-taller.js";
 import { TIPOS_TALLER } from "../lib/workshop-types.js";
 import { resumenPlantillas } from "../lib/plantillas.js";
 import { auditar } from "../lib/auditoria.js";
+import { prestadorCompleto } from "../lib/contrato-config.js";
 import { correoDisponible, faltantesCorreo } from "../lib/email.js";
 
 export const talleresRoutes = new Hono();
@@ -143,6 +144,7 @@ talleresRoutes.get("/:id", async (c) => {
       phone: true,
       city: true,
       isActive: true,
+      contratoRequerido: true,
       subscriptionStatus: true,
       trialEndsAt: true,
       enabledModules: true,
@@ -175,7 +177,41 @@ talleresRoutes.get("/:id", async (c) => {
     },
   });
   if (!w) return c.json({ error: "Taller no encontrado" }, 404);
-  return c.json({ ...w, modules: normalizarModulos(w.enabledModules) });
+  return c.json({ ...w, modules: normalizarModulos(w.enabledModules), contrato: await contratoDelTaller(id) });
+});
+
+// El contrato del taller: si se le pide, si ya lo firmó y si se puede firmar
+// (sin los datos del prestador, encender el interruptor no bloquea a nadie).
+async function contratoDelTaller(id: bigint) {
+  const [firmado] = await prisma.$queryRaw<{ codigo: string; version: string; firmado_en: Date; firmante_nombre: string }[]>`
+    SELECT codigo, version, firmado_en, firmante_nombre FROM contratos_firmados
+    WHERE workshop_id = ${id} ORDER BY firmado_en DESC LIMIT 1`;
+  return {
+    firmado: firmado
+      ? { codigo: firmado.codigo, version: firmado.version, firmadoEn: firmado.firmado_en, firmante: firmado.firmante_nombre }
+      : null,
+    disponible: await prestadorCompleto(),
+  };
+}
+
+// PUT /talleres/:id/contrato — { requerido: bool }
+//
+// Encendido, el administrador del taller encuentra el contrato al entrar a su
+// panel y no puede usarlo hasta firmarlo. Apagarlo no borra lo ya firmado.
+const contratoSchema = z.object({ requerido: z.boolean() });
+talleresRoutes.put("/:id/contrato", async (c) => {
+  const id = BigInt(c.req.param("id"));
+  const parsed = contratoSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "Datos inválidos" }, 400);
+  if (parsed.data.requerido && !(await prestadorCompleto())) {
+    return c.json({ error: "Antes de pedir el contrato, llene el nombre y el documento del prestador en Sistema → Contrato de los talleres." }, 400);
+  }
+  const w = await prisma.workshop.update({
+    where: { id },
+    data: { contratoRequerido: parsed.data.requerido },
+    select: { contratoRequerido: true },
+  });
+  return c.json({ contratoRequerido: w.contratoRequerido, contrato: await contratoDelTaller(id) });
 });
 
 // PUT /talleres/:id/modules — { modules: { inventario: true, ... } }

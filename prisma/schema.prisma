@@ -75,6 +75,8 @@ model Workshop {
   whatsappSession    String?   @map("whatsapp_session") @db.VarChar(64)
   whatsappStatus     String?   @map("whatsapp_status") @db.VarChar(32)
   isActive           Boolean   @default(true) @map("is_active")
+  /// Si el taller tiene que firmar el contrato antes de usar su panel. Lo enciende el superadmin.
+  contratoRequerido  Boolean   @default(false) @map("contrato_requerido")
   trialEndsAt        DateTime? @map("trial_ends_at") @db.Timestamptz(0)
   subscriptionStatus String    @default("trial") @map("subscription_status") @db.VarChar(255)
   createdAt          DateTime? @map("created_at") @db.Timestamptz(0)
