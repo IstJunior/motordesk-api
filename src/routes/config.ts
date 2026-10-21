@@ -13,7 +13,7 @@ import {
 } from "../lib/correo-config.js";
 import { transporteDe } from "../lib/email.js";
 import { renderEmail, paragraph } from "../lib/email-template.js";
-import { CLAVE_CONTRATO, MAX_BYTES_FIRMA, configContrato } from "../lib/contrato-config.js";
+import { CLAVE_CONTRATO, MAX_BYTES_FIRMA, TIPOS_DE_DOCUMENTO, configContrato } from "../lib/contrato-config.js";
 
 // Configuración global (superadmin): ajustes de plataforma + proveedores de IA.
 export const configRoutes = new Hono();
@@ -306,7 +306,7 @@ async function estadoContrato() {
     (x): x is string => Boolean(x),
   );
   return {
-    valores: { nombre: config.nombre, documento: config.documento, direccion: config.direccion },
+    valores: { nombre: config.nombre, tipoDocumento: config.tipoDocumento, documento: config.documento, direccion: config.direccion },
     // La imagen vuelve entera para la vista previa: es la firma que ya sale en
     // cada PDF, no un secreto.
     firmaPng: config.firmaPng ? `data:image/png;base64,${config.firmaPng}` : null,
@@ -333,7 +333,9 @@ configRoutes.get("/contrato", async (c) => c.json(await estadoContrato()));
 
 const contratoSchema = z.object({
   nombre: z.string().trim().max(160),
-  documento: z.string().trim().max(40),
+  tipoDocumento: z.enum(TIPOS_DE_DOCUMENTO).default("CC"),
+  // Solo el número: el contrato escribe "cédula de ciudadanía número …".
+  documento: z.string().trim().max(40).transform((v) => v.replace(/^(c\.?\s*c\.?|cc)\s*/i, "").replace(/[\s.]/g, "")),
   direccion: z.string().trim().max(255).default(""),
   // undefined = conservar la guardada; null = quitarla; texto = PNG nuevo.
   firmaPng: z.string().max(MAX_BYTES_FIRMA * 2).nullable().optional(),
@@ -355,7 +357,7 @@ configRoutes.put("/contrato", async (c) => {
     firmaPng = leida;
   }
 
-  const value = { nombre: d.nombre, documento: d.documento, direccion: d.direccion, firmaPng };
+  const value = { nombre: d.nombre, tipoDocumento: d.tipoDocumento, documento: d.documento, direccion: d.direccion, firmaPng };
   const now = new Date();
   await prisma.systemSetting.upsert({
     where: { key: CLAVE_CONTRATO },
