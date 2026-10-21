@@ -1398,9 +1398,25 @@ model ChatMessage {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  media   ChatMessageMedia?
 
   @@index([sessionId, id])
   @@map("chat_messages")
+}
+
+/// El archivo de un mensaje de WhatsApp (nota de voz, foto, video…). Aparte de
+/// `chat_messages` para que listar la conversación no arrastre los bytes.
+model ChatMessageMedia {
+  messageId BigInt   @id @map("message_id")
+  mime      String   @db.VarChar(100)
+  nombre    String?  @db.VarChar(255)
+  tamano    Int
+  bytes     Bytes
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  message ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@map("chat_message_media")
 }
 
 /// Invitación del superadministrador para que un taller se registre solo.

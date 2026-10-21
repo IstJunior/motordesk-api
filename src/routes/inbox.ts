@@ -83,6 +83,24 @@ inboxRoutes.get("/contador", async (c) => {
   return c.json({ noLeidos: n });
 });
 
+// GET /inbox/:sid/mensajes/:mid/adjunto — el archivo del mensaje (nota de voz,
+// foto…), para reproducirlo en la bandeja.
+inboxRoutes.get("/:sid/mensajes/:mid/adjunto", async (c) => {
+  const sid = c.req.param("sid") ?? "";
+  const mid = c.req.param("mid") ?? "";
+  if (!UUID_RE.test(sid) || !/^\d+$/.test(mid)) return c.json({ error: "No encontrado" }, 404);
+  const media = await prisma.chatMessageMedia.findFirst({
+    where: { messageId: BigInt(mid), message: { sessionId: sid, session: SOLO_LEADS } },
+    select: { mime: true, bytes: true },
+  });
+  if (!media) return c.json({ error: "No encontrado" }, 404);
+  return c.body(new Uint8Array(media.bytes), 200, {
+    "Content-Type": media.mime,
+    "Cache-Control": "private, max-age=86400",
+    "X-Content-Type-Options": "nosniff",
+  });
+});
+
 // GET /inbox/:sid — mensajes (marca leída).
 inboxRoutes.get("/:sid", async (c) => {
   const sid = c.req.param("sid") ?? "";
@@ -92,10 +110,12 @@ inboxRoutes.get("/:sid", async (c) => {
   const filas = await prisma.chatMessage.findMany({
     where: { sessionId: sid },
     orderBy: { id: "asc" },
-    select: { id: true, sender: true, text: true, createdAt: true },
+    select: { id: true, sender: true, text: true, createdAt: true, media: { select: { mime: true, nombre: true, tamano: true } } },
   });
   await prisma.chatSession.update({ where: { id: sid }, data: { seenAt: new Date() } });
-  return c.json(filas.map((m) => ({ id: m.id, de: m.sender, texto: m.text, creadoAt: m.createdAt })));
+  return c.json(
+    filas.map((m) => ({ id: m.id, de: m.sender, texto: m.text, creadoAt: m.createdAt, adjunto: m.media ?? null })),
+  );
 });
 
 // POST /inbox/:sid — responder (sender='proveedor').

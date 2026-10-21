@@ -100,6 +100,34 @@ function textoDelMensaje(d: Record<string, unknown>, texto: string): string | nu
   return texto ? `${marca}: ${texto}` : `[${marca}]`;
 }
 
+// El archivo llega una sola vez, en base64 dentro del webhook: OpenWA no lo
+// conserva. Si no viene (OpenWA lo omite cuando pesa demasiado o la descarga
+// falla), el mensaje queda con su marca y nada más.
+const MAX_BYTES_ADJUNTO = 16 * 1024 * 1024;
+
+async function guardarAdjunto(messageId: bigint, media: unknown): Promise<void> {
+  if (!media || typeof media !== "object") return;
+  const m = media as { mimetype?: unknown; filename?: unknown; data?: unknown; omitted?: unknown };
+  if (m.omitted || typeof m.data !== "string" || !m.data) return;
+  const bytes = Buffer.from(m.data, "base64");
+  if (!bytes.length || bytes.length > MAX_BYTES_ADJUNTO) return;
+  const mime = (typeof m.mimetype === "string" && m.mimetype.trim() ? m.mimetype.trim() : "application/octet-stream").slice(0, 100);
+  try {
+    await prisma.chatMessageMedia.create({
+      data: {
+        messageId,
+        mime,
+        nombre: typeof m.filename === "string" ? m.filename.slice(0, 255) : null,
+        tamano: bytes.length,
+        bytes: new Uint8Array(bytes),
+      },
+    });
+  } catch (e) {
+    // El mensaje ya quedó; perder el archivo no puede tumbar el webhook.
+    console.error("bandeja: no se guardó el adjunto:", e instanceof Error ? e.message : e);
+  }
+}
+
 // POST /chat/webhook?token=... — inbound de OpenWA (multi-sesión).
 //  - sesión leads (motordesk): respuesta del proveedor → rutea al widget por #tag.
 //  - sesión de un taller (taller-<code>): mensaje de un CLIENTE → bandeja del taller.
@@ -187,7 +215,8 @@ chatRoutes.post("/webhook", async (c) => {
       select: { id: true },
     });
     if (yaEsta) return c.json({ ok: true });
-    await prisma.chatMessage.create({ data: { sessionId: sesion.id, sender: "proveedor", text: contenido } });
+    const salida = await prisma.chatMessage.create({ data: { sessionId: sesion.id, sender: "proveedor", text: contenido }, select: { id: true } });
+    await guardarAdjunto(salida.id, d.media);
     await prisma.chatSession.update({ where: { id: sesion.id }, data: { lastAt: new Date() } });
     return c.json({ ok: true });
   }
@@ -220,7 +249,8 @@ chatRoutes.post("/webhook", async (c) => {
       select: { id: true, name: true, phone: true },
     });
   }
-  await prisma.chatMessage.create({ data: { sessionId: sesion.id, sender: "visitante", text: contenido } });
+  const entrada = await prisma.chatMessage.create({ data: { sessionId: sesion.id, sender: "visitante", text: contenido }, select: { id: true } });
+  await guardarAdjunto(entrada.id, d.media);
   // Si la había cerrado, vuelve a la bandeja: escribió otra vez.
   await prisma.chatSession.update({
     where: { id: sesion.id },
