@@ -74,30 +74,39 @@ export async function iniciarSesion(nombre: string): Promise<void> {
  * mata el Chromium atascado y deja la sesión en `disconnected`. Solo entonces
  * un `start` arranca limpio.
  */
-export async function reiniciarSesion(nombre: string): Promise<void> {
+export async function reiniciarSesion(nombre: string, opciones: { desvincular?: boolean } = {}): Promise<void> {
   const id = await sesionId(nombre);
+  olvidarEstado(nombre);
 
-  // `logout` borra el perfil de navegador de la sesión; es lo que antes había
-  // que hacer entrando al servidor con un `rm -rf`. Solo existe desde 0.23 y
-  // exige la sesión iniciada: sobre una caída responde 400 y no cambia nada,
-  // por eso va primero y su fallo no interrumpe.
-  await api(`/api/sessions/${id}/logout`, { method: "POST" }).catch(() => {});
+  // `logout` borra el perfil de navegador de la sesión: desvincula el número y
+  // obliga a escanear otra vez. Solo cuando se pide expresamente ("Desvincular
+  // número"). Antes iba siempre, y "Reiniciar" sobre una sesión sana la dejaba
+  // pidiendo QR (le pasó al número de MotorDesk el 2026-10-23).
+  if (opciones.desvincular) await api(`/api/sessions/${id}/logout`, { method: "POST" }).catch(() => {});
   await api(`/api/sessions/${id}/force-kill`, { method: "POST" }).catch(() => {});
   await api(`/api/sessions/${id}/start`, { method: "POST" }).catch(() => {});
 }
 
-/** Estados en los que la sesión está viva y no hay que tocarla. */
-const SANOS = new Set(["ready", "authenticating", "qr_ready"]);
+/** Estados en los que la sesión está viva o arrancando: no hay que tocarla. */
+const SANOS = new Set(["ready", "connected", "authenticated", "authenticating", "qr_ready", "initializing", "connecting", "starting"]);
+
+/** OpenWA no respondió: no se sabe en qué estado está la sesión. */
+export class EstadoDesconocido extends Error {}
 
 /**
- * Arranca la sesión, reiniciándola de raíz si viene atascada.
+ * Arranca la sesión, reiniciándola si viene atascada.
  *
- * Pulsar "conectar" sobre una sesión en bucle no hacía nada visible, que es
- * justo cuando uno pulsa conectar. Si está sana no se toca: un `force-kill`
- * sobre una sesión conectada la desconectaría y tocaría volver a escanear.
+ * Si no se sabe en qué estado está (OpenWA ocupado, `429`), no se toca nada:
+ * antes eso se tomaba como "atascada" y se reiniciaba de raíz, y un número
+ * conectado quedaba desvinculado. Reiniciar no desvincula: conserva el perfil.
  */
 export async function conectarSesion(nombre: string): Promise<void> {
-  const { status } = await estadoSesion(nombre).catch(() => ({ status: "desconocido", qr: null }));
+  olvidarEstado(nombre);
+  const { status } = await estadoSesion(nombre);
+  if (status === "desconocido") {
+    throw new EstadoDesconocido("WhatsApp no respondió. Espere unos segundos y vuelva a intentar; la sesión no se tocó.");
+  }
+  if (status === "ready" || status === "connected" || status === "authenticated") return;
   if (SANOS.has(status)) {
     await iniciarSesion(nombre);
     return;
@@ -105,16 +114,33 @@ export async function conectarSesion(nombre: string): Promise<void> {
   await reiniciarSesion(nombre);
 }
 
+// El estado se guarda unos segundos. El panel lo consulta cada pocos segundos
+// mientras espera el QR, y con dos pestañas abiertas eran ~2.100 consultas por
+// hora, cada una con 1-2 llamadas a OpenWA: su límite de peticiones respondía
+// `429` y el panel mostraba "desconocido" con el número conectado.
+const ESTADO_TTL_MS = 4000;
+const estadoCache = new Map<string, { hasta: number; valor: { status: string; qr: string | null } }>();
+
+function olvidarEstado(nombre: string) {
+  estadoCache.delete(nombre);
+}
+
 export async function estadoSesion(nombre: string): Promise<{ status: string; qr: string | null }> {
-  const id = await sesionId(nombre);
-  const s = await api<Sesion>(`/api/sessions/${id}`).catch(() => null);
+  const guardado = estadoCache.get(nombre);
+  if (guardado && guardado.hasta > Date.now()) return guardado.valor;
+
+  const id = await sesionId(nombre).catch(() => null);
+  const s = id ? await api<Sesion>(`/api/sessions/${id}`).catch(() => null) : null;
   const status = s?.status ?? "desconocido";
   let qr: string | null = null;
-  if (status === "qr_ready") {
+  if (status === "qr_ready" && id) {
     const q = await api<{ qrCode?: string; qr?: string }>(`/api/sessions/${id}/qr`).catch(() => null);
     qr = q?.qrCode ?? q?.qr ?? null;
   }
-  return { status, qr };
+  const valor = { status, qr };
+  // Un fallo también se guarda: si OpenWA está saturado, insistir lo empeora.
+  estadoCache.set(nombre, { hasta: Date.now() + ESTADO_TTL_MS, valor });
+  return valor;
 }
 
 /**

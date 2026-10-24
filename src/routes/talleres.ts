@@ -10,6 +10,7 @@ import {
   openwaHabilitado,
   estadoSesion,
   conectarSesion,
+  EstadoDesconocido,
   registrarWebhook,
   sesionTaller,
   WEBHOOK_TOKEN,
@@ -404,7 +405,12 @@ talleresRoutes.post("/:id/whatsapp/connect", async (c) => {
   // Igual que la sesión de leads: si viene en bucle de caídas, un `start` a
   // secas no hace nada y el QR no aparece. `conectarSesion` la reinicia de raíz
   // solo en ese caso; si está sana no la toca.
-  await conectarSesion(session);
+  try {
+    await conectarSesion(session);
+  } catch (e) {
+    if (e instanceof EstadoDesconocido) return c.json({ error: e.message }, 503);
+    throw e;
+  }
   if (BACKEND_URL) {
     const url = `${BACKEND_URL}/api/chat/webhook?token=${encodeURIComponent(WEBHOOK_TOKEN)}`;
     await registrarWebhook(session, url, WEBHOOK_TOKEN).catch((e) =>

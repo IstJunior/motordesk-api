@@ -5,6 +5,7 @@ import {
   conectarSesion,
   estadoSesion,
   reiniciarSesion,
+  EstadoDesconocido,
   registrarWebhook,
   SESION_LEADS,
   WEBHOOK_TOKEN,
@@ -48,23 +49,39 @@ whatsappRoutes.post("/conectar", async (c) => {
   if (!openwaHabilitado()) return c.json({ error: "OpenWA no configurado" }, 503);
   // `conectarSesion` y no `iniciarSesion`: si la sesión viene en bucle de
   // caídas, un `start` a secas no hace nada y el QR no aparece nunca.
-  await conectarSesion(SESION_LEADS);
+  try {
+    await conectarSesion(SESION_LEADS);
+  } catch (e) {
+    if (e instanceof EstadoDesconocido) return c.json({ error: e.message }, 503);
+    throw e;
+  }
   await asegurarWebhookDeLeads();
   const est = await estadoSesion(SESION_LEADS).catch(() => ({ status: "desconocido", qr: null }));
   return c.json({ status: est.status, qr: est.qr });
 });
 
 /**
- * Reinicio de raíz, aunque la sesión parezca sana.
+ * Reinicia el navegador de la sesión sin desvincular el número.
  *
  * Es la salida cuando el QR no aparece o la sesión quedó a medias: mata el
- * navegador, cancela las reconexiones y arranca de cero. Va aparte de
- * "conectar" porque desconecta lo que hubiera: quien lo pulsa sabe que va a
- * tener que escanear otra vez.
+ * navegador, cancela las reconexiones y arranca de nuevo con el mismo perfil.
+ * Antes además desvinculaba, y pulsarlo sobre una sesión sana obligaba a
+ * escanear otra vez.
  */
 whatsappRoutes.post("/reiniciar", async (c) => {
   if (!openwaHabilitado()) return c.json({ error: "OpenWA no configurado" }, 503);
   await reiniciarSesion(SESION_LEADS);
+  const est = await estadoSesion(SESION_LEADS).catch(() => ({ status: "desconocido", qr: null }));
+  return c.json({ status: est.status, qr: est.qr });
+});
+
+/**
+ * Desvincula el número y arranca de cero: hay que volver a escanear el QR.
+ * Para cambiar de número o cuando el perfil quedó dañado.
+ */
+whatsappRoutes.post("/desvincular", async (c) => {
+  if (!openwaHabilitado()) return c.json({ error: "OpenWA no configurado" }, 503);
+  await reiniciarSesion(SESION_LEADS, { desvincular: true });
   const est = await estadoSesion(SESION_LEADS).catch(() => ({ status: "desconocido", qr: null }));
   return c.json({ status: est.status, qr: est.qr });
 });

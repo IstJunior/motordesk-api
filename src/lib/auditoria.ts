@@ -30,6 +30,8 @@ const ACCIONES: Record<string, string> = {
   "POST /facturacion/talleres/:id/paquetes/:id/anular": "Anulación del paquete de facturación electrónica",
   "POST /facturacion/talleres/:id/factus": "Consulta del consumo en Factus",
   "PUT /config": "Cambio de ajustes del sistema",
+  "POST /whatsapp/reiniciar": "Reinicio del WhatsApp de MotorDesk",
+  "POST /whatsapp/desvincular": "Desvinculación del WhatsApp de MotorDesk",
   "POST /auth/puente": "Entrada a la app desde el panel del proveedor",
   "PUT /config/contrato": "Cambio de los datos del prestador del contrato",
   "PUT /talleres/:id/contrato": "Cambio del contrato exigido al taller",
