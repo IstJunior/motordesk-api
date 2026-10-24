@@ -139,7 +139,11 @@ export async function estadoSesion(nombre: string): Promise<{ status: string; qr
   }
   const valor = { status, qr };
   // Un fallo también se guarda: si OpenWA está saturado, insistir lo empeora.
-  estadoCache.set(nombre, { hasta: Date.now() + ESTADO_TTL_MS, valor });
+  // Con QR en pantalla se guarda más: OpenWA limita a 1.000 peticiones por hora
+  // por cliente, y cada consulta con QR son dos. WhatsApp renueva el código
+  // cada ~20 s, así que 15 s no deja a nadie con un QR vencido.
+  const ttl = status === "qr_ready" ? 15000 : ESTADO_TTL_MS;
+  estadoCache.set(nombre, { hasta: Date.now() + ttl, valor });
   return valor;
 }
 
