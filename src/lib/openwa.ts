@@ -116,35 +116,50 @@ export async function conectarSesion(nombre: string): Promise<void> {
 
 // El estado se guarda unos segundos. El panel lo consulta cada pocos segundos
 // mientras espera el QR, y con dos pestañas abiertas eran ~2.100 consultas por
-// hora, cada una con 1-2 llamadas a OpenWA: su límite de peticiones respondía
-// `429` y el panel mostraba "desconocido" con el número conectado.
+// hora, cada una con 1-2 llamadas a OpenWA: su límite (1.000 por hora por
+// cliente) respondía `429` y el panel mostraba "desconocido" con el número
+// conectado.
+//
+// El estado y la imagen del QR se guardan por separado: el estado poco (4 s),
+// para notar enseguida que alguien escaneó; el QR más (15 s), porque WhatsApp
+// lo renueva cada ~20 s y pedirlo en cada consulta duplicaba las llamadas.
 const ESTADO_TTL_MS = 4000;
-const estadoCache = new Map<string, { hasta: number; valor: { status: string; qr: string | null } }>();
+const QR_TTL_MS = 15000;
+const estadoCache = new Map<string, { hasta: number; status: string }>();
+const qrCache = new Map<string, { hasta: number; qr: string | null }>();
 
 function olvidarEstado(nombre: string) {
   estadoCache.delete(nombre);
+  qrCache.delete(nombre);
 }
 
 export async function estadoSesion(nombre: string): Promise<{ status: string; qr: string | null }> {
+  let status: string;
   const guardado = estadoCache.get(nombre);
-  if (guardado && guardado.hasta > Date.now()) return guardado.valor;
-
   const id = await sesionId(nombre).catch(() => null);
-  const s = id ? await api<Sesion>(`/api/sessions/${id}`).catch(() => null) : null;
-  const status = s?.status ?? "desconocido";
+  if (guardado && guardado.hasta > Date.now()) {
+    status = guardado.status;
+  } else {
+    const s = id ? await api<Sesion>(`/api/sessions/${id}`).catch(() => null) : null;
+    status = s?.status ?? "desconocido";
+    // Un fallo también se guarda: si OpenWA está saturado, insistir lo empeora.
+    estadoCache.set(nombre, { hasta: Date.now() + ESTADO_TTL_MS, status });
+  }
+
   let qr: string | null = null;
   if (status === "qr_ready" && id) {
-    const q = await api<{ qrCode?: string; qr?: string }>(`/api/sessions/${id}/qr`).catch(() => null);
-    qr = q?.qrCode ?? q?.qr ?? null;
+    const qrGuardado = qrCache.get(nombre);
+    if (qrGuardado && qrGuardado.hasta > Date.now()) {
+      qr = qrGuardado.qr;
+    } else {
+      const q = await api<{ qrCode?: string; qr?: string }>(`/api/sessions/${id}/qr`).catch(() => null);
+      qr = q?.qrCode ?? q?.qr ?? null;
+      qrCache.set(nombre, { hasta: Date.now() + QR_TTL_MS, qr });
+    }
+  } else {
+    qrCache.delete(nombre);
   }
-  const valor = { status, qr };
-  // Un fallo también se guarda: si OpenWA está saturado, insistir lo empeora.
-  // Con QR en pantalla se guarda más: OpenWA limita a 1.000 peticiones por hora
-  // por cliente, y cada consulta con QR son dos. WhatsApp renueva el código
-  // cada ~20 s, así que 15 s no deja a nadie con un QR vencido.
-  const ttl = status === "qr_ready" ? 15000 : ESTADO_TTL_MS;
-  estadoCache.set(nombre, { hasta: Date.now() + ttl, valor });
-  return valor;
+  return { status, qr };
 }
 
 /**
