@@ -200,6 +200,97 @@ async function contratoDelTaller(id: bigint) {
 // Encendido, el administrador del taller encuentra el contrato al entrar a su
 // panel y no puede usarlo hasta firmarlo. Apagarlo no borra lo ya firmado.
 const contratoSchema = z.object({ requerido: z.boolean() });
+// Historial de pagos de la suscripción: lo que de verdad se cobró, venga de
+// Mercado Pago (automático), ePayco (link) o un pago registrado a mano. La
+// fuente es payment_transactions, que todos los caminos de cobro llenan; la
+// factura solo aporta el período y el plan. Se muestra el monto de la
+// transacción y no el de la factura: una suscripción de Mercado Pago creada
+// antes de un cambio de precio sigue cobrando el monto viejo.
+type Payload = Record<string, unknown>;
+const texto = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+const numero = (v: unknown) => (typeof v === "number" ? v : typeof v === "string" && v.trim() && !Number.isNaN(Number(v)) ? Number(v) : null);
+const capital = (v: string) => v.charAt(0).toUpperCase() + v.slice(1);
+
+function detalleDelPago(provider: string, raw: unknown) {
+  const p = (raw && typeof raw === "object" ? raw : {}) as Payload;
+  if (p.manual === true) return { origen: "manual", medio: "Registrado a mano", neto: null as number | null, cuotas: null as number | null };
+  if (provider === "mercado_pago") {
+    const tarjeta = (p.card ?? {}) as Payload;
+    const metodo = texto(p.payment_method_id);
+    const ultimos = texto(tarjeta.last_four_digits);
+    const det = (p.transaction_details ?? {}) as Payload;
+    return {
+      origen: "mercado_pago",
+      medio: metodo ? `${capital(metodo)}${ultimos ? ` •••• ${ultimos}` : ""}` : null,
+      neto: numero(det.net_received_amount),
+      cuotas: numero(p.installments),
+    };
+  }
+  if (provider === "epayco") {
+    const franquicia = texto(p.x_franchise);
+    const banco = texto(p.x_bank_name);
+    const tarjeta = texto(p.x_cardnumber);
+    return {
+      origen: "epayco",
+      medio: [franquicia, banco, tarjeta].filter(Boolean).join(" · ") || null,
+      neto: null,
+      cuotas: numero(p.x_quotas),
+    };
+  }
+  return { origen: provider, medio: null, neto: null, cuotas: null };
+}
+
+talleresRoutes.get("/:id/pagos", async (c) => {
+  const id = BigInt(c.req.param("id"));
+  const filas = await prisma.paymentTransaction.findMany({
+    where: { workshopId: id },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+    select: {
+      id: true,
+      provider: true,
+      status: true,
+      amount: true,
+      currency: true,
+      providerTxId: true,
+      reference: true,
+      errorMessage: true,
+      rawPayload: true,
+      createdAt: true,
+      invoice: { select: { periodStart: true, periodEnd: true, paidAt: true, plan: { select: { name: true } } } },
+    },
+  });
+  const pagos = filas.map((t) => {
+    const d = detalleDelPago(t.provider, t.rawPayload);
+    return {
+      id: t.id.toString(),
+      fecha: (t.invoice?.paidAt ?? t.createdAt).toISOString(),
+      origen: d.origen,
+      estado: t.status,
+      monto: Number(t.amount),
+      neto: d.neto,
+      moneda: t.currency,
+      medio: d.medio,
+      cuotas: d.cuotas,
+      transaccion: t.providerTxId,
+      referencia: t.reference,
+      error: t.errorMessage,
+      plan: t.invoice?.plan?.name ?? null,
+      periodoDesde: t.invoice?.periodStart.toISOString() ?? null,
+      periodoHasta: t.invoice?.periodEnd.toISOString() ?? null,
+    };
+  });
+  const aprobados = pagos.filter((p) => p.estado === "approved");
+  return c.json({
+    pagos,
+    resumen: {
+      cobrado: aprobados.reduce((s, p) => s + p.monto, 0),
+      pagosAprobados: aprobados.length,
+      rechazados: pagos.filter((p) => p.estado !== "approved" && p.estado !== "pending").length,
+    },
+  });
+});
+
 talleresRoutes.put("/:id/contrato", async (c) => {
   const id = BigInt(c.req.param("id"));
   const parsed = contratoSchema.safeParse(await c.req.json().catch(() => null));
