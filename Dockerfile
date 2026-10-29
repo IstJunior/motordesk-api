@@ -43,6 +43,13 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/package.json ./package.json
+# Sin root. UID/GID 1002 es el del usuario `deployer` del host, dueño de
+# /home/deployer/manuales (775), que se monta en /app/manuales: así la API
+# escribe en la biblioteca sin chown y lo que sube queda a nombre del mismo
+# dueño que el importador. El home hace falta para las cachés de npx y Prisma.
+RUN groupadd --gid 1002 motordesk \
+  && useradd --uid 1002 --gid 1002 --create-home --shell /usr/sbin/nologin motordesk
+USER motordesk
 # Al arrancar: aplica migraciones (aditivas) y levanta el servidor.
 CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
 EXPOSE 3000

@@ -158,10 +158,11 @@ function md5(ruta: string): Promise<string> {
   });
 }
 
-// Lo que el superadmin escribe va a nombre del dueño de la biblioteca. La API
-// corre como root: sin esto, las carpetas nuevas quedaban de root y el
+// Lo que el superadmin escribe va a nombre del dueño de la biblioteca. Cuando
+// la API corría como root, sin esto las carpetas nuevas quedaban de root y el
 // importador (que corre como el usuario del servidor) ya no podía escribir en
-// ellas.
+// ellas. Hoy corre con el UID del dueño (ver Dockerfile) y esto no cambia
+// nada, pero protege si alguna vez vuelve a correr con otro usuario.
 async function comoLaBiblioteca(ruta: string) {
   try {
     const s = await stat(RAIZ);
