@@ -52,6 +52,24 @@ async function sesionId(nombre: string): Promise<string> {
   return creada.id;
 }
 
+/**
+ * Nombre de la sesión por su UUID.
+ *
+ * Los webhooks de OpenWA traen `sessionId` (el UUID) y no el nombre. Sin esto,
+ * el webhook de chat no podía saber si un mensaje era de la línea de leads o
+ * de la sesión de un taller, y trataba todo como lead.
+ */
+const nombrePorId = new Map<string, string>();
+export async function nombreDeSesionPorId(id: string): Promise<string | null> {
+  if (!id) return null;
+  const guardado = nombrePorId.get(id);
+  if (guardado) return guardado;
+  const s = await api<Sesion>(`/api/sessions/${encodeURIComponent(id)}`).catch(() => null);
+  if (!s?.name) return null;
+  nombrePorId.set(id, s.name);
+  return s.name;
+}
+
 export async function crearSesion(nombre: string): Promise<void> {
   await sesionId(nombre);
 }

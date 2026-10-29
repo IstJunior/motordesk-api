@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { prisma } from "../lib/db.js";
 import { avisarLead, UUID_RE } from "../lib/chat-notify.js";
-import { WEBHOOK_TOKEN, SESION_LEADS } from "../lib/openwa.js";
+import { WEBHOOK_TOKEN, SESION_LEADS, nombreDeSesionPorId } from "../lib/openwa.js";
 import { rateLimit } from "../auth/rate-limit.js";
 
 // Chat público (widget de leads + webhook OpenWA). SIN auth.
@@ -140,27 +140,49 @@ chatRoutes.post("/webhook", async (c) => {
 
   const d = (evt.data ?? evt) as Record<string, unknown>;
   const evento = String(evt.event ?? d.event ?? "");
-  const sessionName = String(evt.session ?? d.session ?? d.sessionName ?? "");
   const fromMe = Boolean(d.fromMe);
-  const remitente = String(d.sender ?? d.from ?? d.chatId ?? "").replace(/\D/g, "");
   const texto = String(d.text ?? d.body ?? d.message ?? "").trim();
   const enviado = evento === "message.sent";
   if (evento && evento !== "message.received" && !enviado) return c.json({ ok: true });
+
+  // OpenWA manda el UUID de la sesión (`sessionId`), no su nombre. Antes solo
+  // se leía el nombre, que nunca venía, y un mensaje de un cliente a la sesión
+  // de un taller caía en la rama de leads como si le escribiera a MotorDesk.
+  const sessionName =
+    String(evt.session ?? d.session ?? d.sessionName ?? "") ||
+    (await nombreDeSesionPorId(String(evt.sessionId ?? d.sessionId ?? "")).catch(() => null)) ||
+    "";
 
   // Sesión de taller → mensaje entrante de un cliente del taller.
   if (sessionName && sessionName !== SESION_LEADS && sessionName.startsWith("taller-")) {
     if (enviado || fromMe || !texto) return c.json({ ok: true });
     const w = await prisma.workshop.findFirst({ where: { whatsappSession: sessionName }, select: { id: true } });
     if (!w) return c.json({ ok: true });
-    // Reusa/crea la conversación del cliente (por teléfono) en ese taller.
+    // El chat tal cual llega (`…@c.us` o `…@lid`) y el número real. Desde
+    // OpenWA 0.26, Baileys entrega el `@lid` como id y el número aparte, en
+    // `senderPhone`: tomar los dígitos del id guardaba los del `@lid` como si
+    // fueran el teléfono del cliente.
+    const chatCliente = String(d.chatId ?? d.from ?? "").trim();
+    const telefonoCliente =
+      (/@(c\.us|s\.whatsapp\.net)$/.test(chatCliente) ? chatCliente : String(d.senderPhone ?? ""))
+        .replace(/\D/g, "")
+        .slice(0, 40) || null;
+    // Reusa/crea la conversación del cliente en ese taller: por su chat o por
+    // su teléfono, porque puede llegar unas veces con uno y otras con el otro.
     let sesion = await prisma.chatSession.findFirst({
-      where: { workshopId: w.id, phone: remitente },
+      where: {
+        workshopId: w.id,
+        OR: [
+          ...(chatCliente ? [{ whatsappChatId: chatCliente }] : []),
+          ...(telefonoCliente ? [{ phone: telefonoCliente }] : []),
+        ],
+      },
       orderBy: { lastAt: "desc" },
       select: { id: true },
     });
     if (!sesion) {
       sesion = await prisma.chatSession.create({
-        data: { workshopId: w.id, phone: remitente || null },
+        data: { workshopId: w.id, phone: telefonoCliente, whatsappChatId: chatCliente || null },
         select: { id: true },
       });
     }
