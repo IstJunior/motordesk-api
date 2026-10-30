@@ -1504,3 +1504,35 @@ model PuenteSuperadmin {
 
   @@map("puentes_superadmin")
 }
+
+/// Quien se unió al Club del Taller desde /club (ver migración
+/// 20261030000000_club_del_taller). Un registro por celular: si vuelve a
+/// llenar el formulario se actualizan sus datos y se conserva el estado.
+model ClubRegistro {
+  id            BigInt    @id @default(autoincrement())
+  nombre        String    @db.VarChar(120)
+  /// Solo dígitos, con el indicativo: "573001234567".
+  telefono      String    @unique @db.VarChar(20)
+  /// "mecanico" | "dueno"
+  rol           String    @db.VarChar(16)
+  marcas        String[]  @default([]) @db.VarChar(40)
+  ciudad        String?   @db.VarChar(80)
+  /// De qué contenido llegó (`?origen=` o `utm_content`): "reel-aceite-carro".
+  origen        String?   @db.VarChar(80)
+  /// La ficha que pidió (`?ficha=`): "NS200".
+  ficha         String?   @db.VarChar(40)
+  /// "nuevo" | "contactado" | "cliente" | "descartado"
+  estado        String    @default("nuevo") @db.VarChar(16)
+  ip            String?   @db.VarChar(64)
+  userAgent     String?   @map("user_agent") @db.VarChar(255)
+  /// Veces que llenó el formulario.
+  envios        Int       @default(1)
+  creadoEn      DateTime  @default(now()) @map("creado_en") @db.Timestamptz(3)
+  actualizadoEn DateTime  @default(now()) @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+  contactadoEn  DateTime? @map("contactado_en") @db.Timestamptz(3)
+
+  @@index([creadoEn])
+  @@index([estado, creadoEn])
+  @@index([ip, creadoEn])
+  @@map("club_registros")
+}

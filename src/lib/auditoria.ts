@@ -48,6 +48,7 @@ const ACCIONES: Record<string, string> = {
   "POST /backups/taller/:id": "Respaldo de un taller",
   "POST /backups/taller/:id/restaurar": "Restauración de un taller",
   "POST /whatsapp/conectar": "Conexión del WhatsApp de leads",
+  "PATCH /club/:id": "Cambio de estado de un inscrito del Club del Taller",
 };
 
 export async function auditar(entrada: {
