@@ -70,6 +70,27 @@ export async function nombreDeSesionPorId(id: string): Promise<string | null> {
   return s.name;
 }
 
+/**
+ * Número de teléfono detrás de un id privado (`…@lid`), o `null` si OpenWA no
+ * lo conoce.
+ *
+ * Desde OpenWA 0.26, Baileys usa el `@lid` como id del chat también en lo que
+ * se envía: el aviso `message.sent` de un mensaje a `573…@c.us` puede llegar
+ * con `…@lid`, y la conversación guardada con el número no se encontraba.
+ */
+const telefonoPorLid = new Map<string, string>();
+export async function telefonoDeLid(sessionId: string, lid: string): Promise<string | null> {
+  if (!sessionId || !lid.endsWith("@lid")) return null;
+  const guardado = telefonoPorLid.get(lid);
+  if (guardado) return guardado;
+  const r = await api<{ phone?: string | null }>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/contacts/${encodeURIComponent(lid)}/phone`,
+  ).catch(() => null);
+  const phone = r?.phone?.replace(/\D/g, "") || null;
+  if (phone) telefonoPorLid.set(lid, phone);
+  return phone;
+}
+
 export async function crearSesion(nombre: string): Promise<void> {
   await sesionId(nombre);
 }

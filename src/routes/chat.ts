@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { prisma } from "../lib/db.js";
 import { avisarLead, UUID_RE } from "../lib/chat-notify.js";
-import { WEBHOOK_TOKEN, SESION_LEADS, nombreDeSesionPorId } from "../lib/openwa.js";
+import { WEBHOOK_TOKEN, SESION_LEADS, nombreDeSesionPorId, telefonoDeLid } from "../lib/openwa.js";
 import { rateLimit } from "../auth/rate-limit.js";
 
 // Chat público (widget de leads + webhook OpenWA). SIN auth.
@@ -224,8 +224,14 @@ chatRoutes.post("/webhook", async (c) => {
   // Lo que MotorDesk le escribe a alguien desde el celular. Va a su
   // conversación, si la tiene: escribirle a un contacto no lo vuelve un lead.
   if (enviado || fromMe) {
+    // Por el chat tal cual, y si llega como `@lid`, también por el número que
+    // hay detrás: la conversación pudo guardarse con el número (`…@c.us`).
+    const telefonoDestino = await telefonoDeLid(String(evt.sessionId ?? d.sessionId ?? ""), chatId).catch(() => null);
     const sesion = await prisma.chatSession.findFirst({
-      where: { workshopId: null, whatsappChatId: chatId },
+      where: {
+        workshopId: null,
+        OR: [{ whatsappChatId: chatId }, ...(telefonoDestino ? [{ canal: "whatsapp", phone: telefonoDestino }] : [])],
+      },
       orderBy: { lastAt: "desc" },
       select: { id: true },
     });
