@@ -38,9 +38,14 @@ export const ETIQUETA_MODULO: Record<Modulo, string> = {
   compras: "Compras y proveedores",
 };
 
-// Default: todos los toggleables encendidos, inventario incluido.
+// Default: los toggleables encendidos, salvo la facturación electrónica, que se
+// vende aparte y la enciende el superadmin taller por taller. Mismo default que
+// el monolito (motordesk/src/lib/workshop-modules.ts): si cambia uno, cambia el
+// otro.
+const APAGADOS_POR_DEFECTO: ReadonlySet<Modulo> = new Set<Modulo>(["facturacion_electronica"]);
+
 export function modulosPorDefecto(): Record<Modulo, boolean> {
-  return Object.fromEntries(MODULOS.map((m) => [m, true])) as Record<Modulo, boolean>;
+  return Object.fromEntries(MODULOS.map((m) => [m, !APAGADOS_POR_DEFECTO.has(m)])) as Record<Modulo, boolean>;
 }
 
 // Normaliza el JSON almacenado (enabled_modules) a un mapa completo con defaults.
