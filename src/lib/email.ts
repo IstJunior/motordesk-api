@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import { configEfectiva, configGuardada, faltantes, type ConfigCorreo, type OrigenCorreo } from "./correo-config.js";
+import { htmlATexto, recibeSoloTextoSimple } from "./texto-simple.js";
 
 // Correo saliente de la API del proveedor.
 //
@@ -35,11 +36,14 @@ export async function enviarCorreo(input: { to: string; subject: string; html: s
   }
 
   const { config, origen } = resuelto;
+  // Los dominios educativos retienen sin avisar el correo con diseño: a ellos
+  // va solo el texto (ver texto-simple.ts).
+  const soloTexto = recibeSoloTextoSimple(input.to);
   await transporteDe(config).sendMail({
     from: `${config.fromName} <${config.fromEmail}>`,
     to: input.to,
     subject: input.subject,
-    html: input.html,
+    ...(soloTexto ? { text: htmlATexto(input.html) } : { html: input.html }),
   });
 
   return origen;
