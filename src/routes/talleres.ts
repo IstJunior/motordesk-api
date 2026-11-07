@@ -39,6 +39,7 @@ import { TIPOS_TALLER } from "../lib/workshop-types.js";
 import { resumenPlantillas } from "../lib/plantillas.js";
 import { auditar } from "../lib/auditoria.js";
 import { prestadorCompleto } from "../lib/contrato-config.js";
+import { silenciarTaller, tallerSilenciado } from "../lib/silencio.js";
 import { correoDisponible, faltantesCorreo } from "../lib/email.js";
 
 export const talleresRoutes = new Hono();
@@ -178,7 +179,12 @@ talleresRoutes.get("/:id", async (c) => {
     },
   });
   if (!w) return c.json({ error: "Taller no encontrado" }, 404);
-  return c.json({ ...w, modules: normalizarModulos(w.enabledModules), contrato: await contratoDelTaller(id) });
+  return c.json({
+    ...w,
+    modules: normalizarModulos(w.enabledModules),
+    contrato: await contratoDelTaller(id),
+    silenciado: await tallerSilenciado(id),
+  });
 });
 
 // El contrato del taller: si se le pide, si ya lo firmó y si se puede firmar
@@ -304,6 +310,20 @@ talleresRoutes.put("/:id/contrato", async (c) => {
     select: { contratoRequerido: true },
   });
   return c.json({ contratoRequerido: w.contratoRequerido, contrato: await contratoDelTaller(id) });
+});
+
+// PUT /talleres/:id/silencio — { silenciado: bool }
+//
+// Encendido, el taller no le manda nada a nadie: los avisos se anotan como
+// silenciados y no salen. Para el demo mientras se graba o se prueba.
+const silencioSchema = z.object({ silenciado: z.boolean() });
+talleresRoutes.put("/:id/silencio", async (c) => {
+  const id = BigInt(c.req.param("id"));
+  const parsed = silencioSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "Datos inválidos" }, 400);
+  const existe = await prisma.workshop.findFirst({ where: { id, deletedAt: null }, select: { id: true } });
+  if (!existe) return c.json({ error: "Taller no encontrado" }, 404);
+  return c.json({ silenciado: await silenciarTaller(id, parsed.data.silenciado) });
 });
 
 // PUT /talleres/:id/modules — { modules: { inventario: true, ... } }

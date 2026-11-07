@@ -35,6 +35,7 @@ const ACCIONES: Record<string, string> = {
   "POST /auth/puente": "Entrada a la app desde el panel del proveedor",
   "PUT /config/contrato": "Cambio de los datos del prestador del contrato",
   "PUT /talleres/:id/contrato": "Cambio del contrato exigido al taller",
+  "PUT /talleres/:id/silencio": "Cambio del modo silencio del taller",
   "POST /config/ai-providers": "Alta de proveedor de IA",
   "PUT /config/ai-providers/:id": "Edición de proveedor de IA",
   "DELETE /config/ai-providers/:id": "Baja de proveedor de IA",
