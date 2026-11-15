@@ -22,15 +22,33 @@ export async function contarDocumentos(workshopIds: bigint[], desde: Date, hasta
     provider: { in: PROVEEDORES },
     environment: "production",
   };
-  const [facturas, notas] = await Promise.all([
+  // Copia de src/lib/facturacion/cupo.ts del monolito: si cambia qué cuenta
+  // como documento, cambian los dos. Las tablas y columnas nuevas (ajustes de
+  // venta, documento soporte por Factus) van por SQL: el esquema de esta API
+  // no tiene por qué conocerlas para contarlas.
+  const ids = workshopIds;
+  const [facturas, anulaciones, extra] = await Promise.all([
     prisma.dianElectronicDocument.count({
       where: { ...base, status: { not: "rejected" }, createdAt: { gte: desde, lt: hasta } },
     }),
     prisma.dianElectronicDocument.count({
       where: { ...base, creditNoteNumber: { not: null }, creditNoteAt: { gte: desde, lt: hasta } },
     }),
+    prisma.$queryRaw<{ ajustes: number; soportes: number; notas_ajuste: number }[]>`
+      SELECT
+        (SELECT COUNT(*)::int FROM sale_adjustments
+          WHERE workshop_id = ANY(${ids}) AND provider = ANY(${PROVEEDORES}) AND environment = 'production'
+            AND number IS NOT NULL AND created_at >= ${desde} AND created_at < ${hasta}) AS ajustes,
+        (SELECT COUNT(*)::int FROM dian_support_documents
+          WHERE workshop_id = ANY(${ids}) AND provider = ANY(${PROVEEDORES}) AND environment = 'production'
+            AND status <> 'rejected' AND created_at >= ${desde} AND created_at < ${hasta}) AS soportes,
+        (SELECT COUNT(*)::int FROM dian_support_documents
+          WHERE workshop_id = ANY(${ids}) AND provider = ANY(${PROVEEDORES}) AND environment = 'production'
+            AND adjustment_note_number IS NOT NULL AND adjustment_note_at >= ${desde} AND adjustment_note_at < ${hasta}) AS notas_ajuste`,
   ]);
-  return { facturas, notas, total: facturas + notas };
+  const e = extra[0] ?? { ajustes: 0, soportes: 0, notas_ajuste: 0 };
+  const notas = anulaciones + e.ajustes + e.notas_ajuste;
+  return { facturas: facturas + e.soportes, notas, total: facturas + e.soportes + notas };
 }
 
 /** Mismo día del mes, o el último si no existe (31 de enero + 1 mes = 28/29 de febrero). */

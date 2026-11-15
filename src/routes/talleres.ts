@@ -575,6 +575,9 @@ function sinSecretos(cfg: NonNullable<Awaited<ReturnType<typeof prisma.workshopD
     factusNumberingRangeId: cfg.factusNumberingRangeId,
     factusSupportRangeId: cfg.factusSupportRangeId,
     factusCreditNoteRangeId: cfg.factusCreditNoteRangeId,
+    factusDebitNoteRangeId: cfg.factusDebitNoteRangeId,
+    factusAdjustmentNoteRangeId: cfg.factusAdjustmentNoteRangeId,
+    supportEnabled: cfg.supportEnabled,
     tieneClaveTecnica: Boolean(cfg.technicalKeyEncrypted),
     tieneFactusSecret: Boolean(cfg.factusClientSecretEnc),
     tieneFactusPassword: Boolean(cfg.factusPasswordEnc),
@@ -623,6 +626,9 @@ talleresRoutes.get("/:id/dian", async (c) => {
       factusNumberingRangeId: null,
       factusSupportRangeId: null,
       factusCreditNoteRangeId: null,
+      factusDebitNoteRangeId: null,
+      factusAdjustmentNoteRangeId: null,
+      supportEnabled: false,
       tieneFactusSecret: false,
       tieneFactusPassword: false,
       nextpymeBaseUrl: null,
@@ -685,6 +691,11 @@ const dianSchema = z.discriminatedUnion("provider", [
     factusNumberingRangeId: z.number().int().positive().optional().nullable(),
     factusSupportRangeId: z.number().int().positive().optional().nullable(),
     factusCreditNoteRangeId: z.number().int().positive().optional().nullable(),
+    factusDebitNoteRangeId: z.number().int().positive().optional().nullable(),
+    factusAdjustmentNoteRangeId: z.number().int().positive().optional().nullable(),
+    // Documento soporte a proveedores no obligados a facturar. Con Factus no
+    // hace falta prefijo ni rango propio: el rango lo da Factus.
+    supportEnabled: z.boolean().optional(),
   }),
   // Nextpyme: una URL y un token. Lo demás que pide —emisor y numeración— es
   // común, porque con Nextpyme el número lo pone MotorDesk.
@@ -865,6 +876,9 @@ talleresRoutes.put("/:id/dian", async (c) => {
           factusNumberingRangeId: fx.factusNumberingRangeId ?? null,
           factusSupportRangeId: fx.factusSupportRangeId ?? null,
           factusCreditNoteRangeId: fx.factusCreditNoteRangeId ?? null,
+          factusDebitNoteRangeId: fx.factusDebitNoteRangeId ?? null,
+          factusAdjustmentNoteRangeId: fx.factusAdjustmentNoteRangeId ?? null,
+          ...(fx.supportEnabled !== undefined ? { supportEnabled: fx.supportEnabled } : {}),
         }
       : {}),
     // Igual con Nextpyme: pasar a otro proveedor no borra su URL ni su token.

@@ -686,6 +686,12 @@ model WorkshopDianConfig {
   factusPasswordEnc       String?   @map("factus_password_enc")
   factusNumberingRangeId  Int?      @map("factus_numbering_range_id")
   factusSupportRangeId    Int?      @map("factus_support_range_id")
+  /// Rangos de nota débito y nota de ajuste al documento soporte. Vacíos = el
+  /// único activo de ese tipo en la cuenta de Factus (lo resuelve el monolito).
+  factusDebitNoteRangeId      Int?  @map("factus_debit_note_range_id")
+  factusAdjustmentNoteRangeId Int?  @map("factus_adjustment_note_range_id")
+  /// Emitir documento soporte a los proveedores no obligados a facturar.
+  supportEnabled              Boolean @default(false) @map("support_enabled")
   /// El de la nota crédito, que es otro rango y que Factus exige
   /// obligatoriamente al anular una factura.
   factusCreditNoteRangeId Int?      @map("factus_credit_note_range_id")
