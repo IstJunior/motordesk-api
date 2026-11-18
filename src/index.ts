@@ -16,6 +16,7 @@ import { backupsRoutes } from "./routes/backups.js";
 import { auditoriaRoutes } from "./routes/auditoria.js";
 import { facturacionRoutes } from "./routes/facturacion.js";
 import { clubRoutes } from "./routes/club.js";
+import { embudoRoutes } from "./routes/embudo.js";
 import { iniciarBackupProgramado } from "./lib/backup-scheduler.js";
 import { auditarMutaciones } from "./lib/auditoria.js";
 
@@ -52,6 +53,7 @@ api.route("/inbox", inboxRoutes);
 api.route("/backups", backupsRoutes);
 api.route("/auditoria", auditoriaRoutes);
 api.route("/club", clubRoutes);
+api.route("/embudo", embudoRoutes);
 
 // Superficie tenant (Supabase Auth + scope por workshop_user).
 api.route("/tenant", tenantRoutes);
