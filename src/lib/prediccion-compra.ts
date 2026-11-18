@@ -59,6 +59,13 @@ const MODULOS_LLENOS = 4;
 /** Días sin registrar nada desde los que la recencia vale cero. */
 const DIAS_APAGADO = 7;
 
+/**
+ * Talleres reales de correo pero que fueron de prueba: no son ni candidatos
+ * ni «se fueron», y contarlos tuerce la conversión.
+ *   74  Mundo Motos (prueba interna, septiembre de 2026)
+ */
+const EXCLUIDOS = new Set(["74"]);
+
 // ── Tipos de la respuesta ────────────────────────────────────────────────────
 
 export type Banda = "alta" | "media" | "baja";
@@ -346,6 +353,7 @@ export async function prediccionDeCompra(ahora = new Date()): Promise<Prediccion
   const seFueron: SeFue[] = [];
 
   for (const t of filas) {
+    if (EXCLUIDOS.has(t.id)) continue;
     const creado = diaBogota(t.creado);
     const fin = t.fin_prueba ? diaBogota(t.fin_prueba) : null;
     const historia = historias.get(t.id);
