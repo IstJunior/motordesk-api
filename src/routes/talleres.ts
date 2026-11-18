@@ -60,6 +60,7 @@ talleresRoutes.get("/", async (c) => {
       email: true,
       isActive: true,
       subscriptionStatus: true,
+      trialEndsAt: true,
       createdAt: true,
       // Solo el personal: `workshop_user` también guarda a los clientes del
       // taller con role='client', y el conteo los estaba sumando.
