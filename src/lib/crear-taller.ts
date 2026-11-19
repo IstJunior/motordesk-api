@@ -201,7 +201,11 @@ export async function crearTaller(datos: DatosNuevoTaller): Promise<ResultadoAlt
             description: "Checklist base creado con el taller. Editable desde el servicio.",
             isActive: true,
             items: {
-              create: s.checklist.map((label, i) => ({ label, sortOrder: i, required: true })),
+              create: s.checklist.map((x, i) =>
+                typeof x === "string"
+                  ? { label: x, sortOrder: i, required: true }
+                  : { label: x.paso, sortOrder: i, required: x.obligatorio },
+              ),
             },
           },
         });
