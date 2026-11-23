@@ -9,6 +9,8 @@
 //
 // Copia de src/lib/correo/smtp2go.ts del monolito: si cambia uno, cambia el otro.
 
+import { htmlATexto } from "./texto-simple.js";
+
 const ENDPOINT = "https://api.smtp2go.com/v3/email/send";
 // Un correo con PDF adjunto tarda; sin tope, una caída de SMTP2GO colgaría la
 // acción que lo manda.
@@ -44,6 +46,10 @@ export async function enviarPorSmtp2go(input: {
   attachments?: AdjuntoSmtp2go[];
 }): Promise<{ emailId: string | null }> {
   const adjuntos = input.attachments ?? [];
+  // Sin text_body, SMTP2GO arma el multipart/alternative con la parte de texto
+  // VACÍA (visto en las cabeceras de la primera prueba). Una alterna vacía es
+  // señal de spam para los filtros: se manda siempre el texto del HTML.
+  const texto = input.text ?? (input.html ? htmlATexto(input.html) : undefined);
 
   let response: Response;
   try {
@@ -58,7 +64,7 @@ export async function enviarPorSmtp2go(input: {
         to: [input.to],
         subject: input.subject,
         ...(input.html ? { html_body: input.html } : {}),
-        ...(input.text ? { text_body: input.text } : {}),
+        ...(texto ? { text_body: texto } : {}),
         ...(input.replyTo ? { custom_headers: [{ header: "Reply-To", value: input.replyTo }] } : {}),
         ...(adjuntos.length > 0
           ? {
