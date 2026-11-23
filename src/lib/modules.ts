@@ -9,7 +9,6 @@ export const MODULOS = [
   "facturacion_electronica",
   "sedes", // multi-sucursal
   "compras", // proveedores, compras y cartera por pagar
-  "pago_tecnicos", // pago a técnicos por % de la mano de obra
 ] as const;
 
 export type Modulo = (typeof MODULOS)[number];
@@ -22,6 +21,10 @@ export const MODULOS_CORE = [
   "manuales",
   "catalogo_vehiculos",
   "tecnicos",
+  // Pago a técnicos por % de la mano de obra. Fue toggle (apagado por defecto)
+  // hasta el 2026-11-23; ahora es core: sin porcentajes fijados no cambia nada
+  // en el taller. Un `pago_tecnicos` guardado en enabled_modules ya no se lee.
+  "pago_tecnicos",
   "reportes",
   "clientes",
   "servicios",
@@ -37,16 +40,13 @@ export const ETIQUETA_MODULO: Record<Modulo, string> = {
   facturacion_electronica: "Facturación electrónica (DIAN)",
   sedes: "Sedes (multi-sucursal)",
   compras: "Compras y proveedores",
-  pago_tecnicos: "Pago a técnicos (% de mano de obra)",
 };
 
 // Default: los toggleables encendidos, salvo la facturación electrónica, que se
 // vende aparte y la enciende el superadmin taller por taller. Mismo default que
 // el monolito (motordesk/src/lib/workshop-modules.ts): si cambia uno, cambia el
 // otro.
-// El pago a técnicos también nace apagado: casi ningún taller paga por
-// porcentaje, y encendido cambia el cobro.
-const APAGADOS_POR_DEFECTO: ReadonlySet<Modulo> = new Set<Modulo>(["facturacion_electronica", "pago_tecnicos"]);
+const APAGADOS_POR_DEFECTO: ReadonlySet<Modulo> = new Set<Modulo>(["facturacion_electronica"]);
 
 export function modulosPorDefecto(): Record<Modulo, boolean> {
   return Object.fromEntries(MODULOS.map((m) => [m, !APAGADOS_POR_DEFECTO.has(m)])) as Record<Modulo, boolean>;
