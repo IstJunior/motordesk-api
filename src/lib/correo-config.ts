@@ -18,16 +18,24 @@ export const CLAVE_CORREO_GLOBAL = "notifications_email_global";
 
 export type OrigenCorreo = "panel" | "entorno";
 
+// `smtp`: cualquier servidor SMTP (Zoho, el SMTP de SMTP2GO...).
+// `smtp2go`: la API HTTP de SMTP2GO. Se elige en el panel; las credenciales del
+// otro se conservan para poder volver sin escribirlas de nuevo.
+export type ProveedorCorreo = "smtp" | "smtp2go";
+
 export type ConfigCorreo = {
   enabled: boolean;
-  provider: "smtp";
+  provider: ProveedorCorreo;
   fromName: string;
   fromEmail: string;
+  /** A dónde van las respuestas; el remitente puede no ser un buzón. */
+  replyTo: string | null;
   smtpHost: string | null;
   smtpPort: number | null;
   smtpSecure: boolean;
   smtpUser: string | null;
   smtpPass: string | null;
+  smtp2goApiKey: string | null;
 };
 
 function texto(valor: unknown): string | null {
@@ -63,6 +71,17 @@ function passwordDe(fila: Record<string, unknown>): string | null {
   return texto(fila.smtpPass);
 }
 
+function apiKeyDe(fila: Record<string, unknown>): string | null {
+  const cifrada = texto(fila.smtp2goApiKeyEnc);
+  if (!cifrada) return null;
+  try {
+    return decryptJson<string>(cifrada);
+  } catch (error) {
+    console.error("[correo] no se pudo descifrar la API key de SMTP2GO guardada", error);
+    return null;
+  }
+}
+
 function comoRegistro(valor: unknown): Record<string, unknown> | null {
   if (!valor || typeof valor !== "object" || Array.isArray(valor)) return null;
   return valor as Record<string, unknown>;
@@ -80,9 +99,10 @@ export async function configGuardada(): Promise<ConfigCorreo | null> {
   const puerto = numero(datos.smtpPort);
   return {
     enabled: booleano(datos.enabled),
-    provider: "smtp",
+    provider: datos.provider === "smtp2go" ? "smtp2go" : "smtp",
     fromName: texto(datos.fromName) ?? "MotorDesk",
     fromEmail: texto(datos.fromEmail) ?? texto(datos.smtpUser) ?? "",
+    replyTo: texto(datos.replyTo),
     smtpHost: texto(datos.smtpHost),
     smtpPort: puerto,
     // El 465 abre en SSL desde el saludo; el 587 sube a TLS con STARTTLS, que es
@@ -90,6 +110,7 @@ export async function configGuardada(): Promise<ConfigCorreo | null> {
     smtpSecure: datos.smtpSecure !== undefined ? booleano(datos.smtpSecure) : puerto === 465,
     smtpUser: texto(datos.smtpUser),
     smtpPass: passwordDe(datos),
+    smtp2goApiKey: apiKeyDe(datos),
   };
 }
 
@@ -107,17 +128,20 @@ export function configEntorno(): ConfigCorreo | null {
     provider: "smtp",
     fromName: texto(process.env.EMAIL_FROM_NAME) ?? "MotorDesk",
     fromEmail: texto(process.env.EMAIL_FROM_ADDRESS) ?? user,
+    replyTo: texto(process.env.EMAIL_REPLY_TO),
     smtpHost: host,
     smtpPort: puerto,
     smtpSecure: secure !== null ? booleano(secure) : puerto === 465,
     smtpUser: user,
     smtpPass: pass,
+    smtp2goApiKey: null,
   };
 }
 
 /** Sin estos datos la conexión se abre y el envío se rechaza: no sirve. */
 export function sirve(config: ConfigCorreo | null): config is ConfigCorreo {
   if (!config || !config.enabled) return false;
+  if (config.provider === "smtp2go") return Boolean(config.smtp2goApiKey && config.fromEmail);
   return Boolean(config.smtpHost && config.smtpPort && config.fromEmail && config.smtpUser && config.smtpPass);
 }
 
@@ -136,6 +160,11 @@ export async function configEfectiva(): Promise<{ config: ConfigCorreo; origen: 
 export function faltantes(config: ConfigCorreo | null): string[] {
   if (!config) return ["Servidor", "Puerto", "Usuario", "Contraseña", "Remitente"];
   const faltan: string[] = [];
+  if (config.provider === "smtp2go") {
+    if (!config.smtp2goApiKey) faltan.push("API key de SMTP2GO");
+    if (!config.fromEmail) faltan.push("Remitente");
+    return faltan;
+  }
   if (!config.smtpHost) faltan.push("Servidor");
   if (!config.smtpPort) faltan.push("Puerto");
   if (!config.smtpUser) faltan.push("Usuario");
@@ -146,26 +175,32 @@ export function faltantes(config: ConfigCorreo | null): string[] {
 
 export type EntradaConfigCorreo = {
   enabled: boolean;
+  provider: ProveedorCorreo;
   smtpHost: string;
   smtpPort: number;
   smtpSecure: boolean;
   smtpUser: string;
   fromName: string;
   fromEmail: string;
+  /** Vacío = sin Reply-To: las respuestas van al remitente. */
+  replyTo?: string | null;
   /** Vacío = conservar la que ya está guardada. */
   smtpPass?: string | null;
+  /** Vacío = conservar la que ya está guardada. */
+  smtp2goApiKey?: string | null;
 };
 
 export async function guardarConfigCorreo(entrada: EntradaConfigCorreo): Promise<ConfigCorreo> {
-  const nueva = texto(entrada.smtpPass);
-  const anterior = nueva ? null : (await configGuardada())?.smtpPass ?? null;
-  const password = nueva ?? anterior;
+  const guardada = await configGuardada();
+  const password = texto(entrada.smtpPass) ?? guardada?.smtpPass ?? null;
+  const apiKey = texto(entrada.smtp2goApiKey) ?? guardada?.smtp2goApiKey ?? null;
 
   const valor = {
     enabled: entrada.enabled,
-    provider: "smtp",
+    provider: entrada.provider,
     fromName: entrada.fromName.trim() || "MotorDesk",
     fromEmail: entrada.fromEmail.trim(),
+    replyTo: texto(entrada.replyTo),
     smtpHost: entrada.smtpHost.trim(),
     smtpPort: entrada.smtpPort,
     smtpSecure: entrada.smtpSecure,
@@ -174,6 +209,7 @@ export async function guardarConfigCorreo(entrada: EntradaConfigCorreo): Promise
     // tabla, no se lleva la contraseña del correo.
     smtpPass: null,
     smtpPassEnc: password ? encryptJson(password) : null,
+    smtp2goApiKeyEnc: apiKey ? encryptJson(apiKey) : null,
   } satisfies Prisma.InputJsonObject;
 
   const ahora = new Date();

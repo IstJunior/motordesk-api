@@ -11,7 +11,7 @@ import {
   guardarConfigCorreo,
   sirve,
 } from "../lib/correo-config.js";
-import { transporteDe } from "../lib/email.js";
+import { enviarConConfig } from "../lib/email.js";
 import { renderEmail, paragraph } from "../lib/email-template.js";
 import { CLAVE_CONTRATO, MAX_BYTES_FIRMA, TIPOS_DE_DOCUMENTO, configContrato } from "../lib/contrato-config.js";
 
@@ -198,14 +198,20 @@ async function estadoCorreo() {
     // los valores del entorno para que el superadmin solo confirme y guarde.
     valores: {
       enabled: guardada?.enabled ?? true,
+      provider: guardada?.provider ?? "smtp",
       smtpHost: guardada?.smtpHost ?? entorno?.smtpHost ?? "",
       smtpPort: guardada?.smtpPort ?? entorno?.smtpPort ?? 465,
       smtpSecure: guardada?.smtpSecure ?? entorno?.smtpSecure ?? true,
       smtpUser: guardada?.smtpUser ?? entorno?.smtpUser ?? "",
       fromName: guardada?.fromName ?? entorno?.fromName ?? "MotorDesk",
       fromEmail: guardada?.fromEmail ?? entorno?.fromEmail ?? "",
+      // Sin Reply-To guardado se propone el remitente de hoy: es un buzón real,
+      // y al cambiar el remitente a uno que no lo es, las respuestas siguen
+      // llegando ahí.
+      replyTo: guardada?.replyTo ?? (guardada ? guardada.fromEmail : entorno?.replyTo ?? entorno?.fromEmail) ?? "",
     },
     tienePassword: Boolean(guardada?.smtpPass),
+    tieneApiKey: Boolean(guardada?.smtp2goApiKey),
     // Sin fila guardada, el entorno trae la suya y el formulario no tiene que
     // pedirla de nuevo para poder guardar.
     heredaPassword: !guardada?.smtpPass && Boolean(entorno?.smtpPass),
@@ -217,17 +223,28 @@ async function estadoCorreo() {
 
 configRoutes.get("/smtp", async (c) => c.json(await estadoCorreo()));
 
-const smtpSchema = z.object({
-  enabled: z.boolean().default(true),
-  smtpHost: z.string().trim().min(1, "Falta el servidor").max(255),
-  smtpPort: z.number().int().min(1).max(65535),
-  smtpSecure: z.boolean(),
-  smtpUser: z.string().trim().min(1, "Falta el usuario").max(255),
-  fromName: z.string().trim().max(255).default("MotorDesk"),
-  fromEmail: z.string().trim().email("El remitente no es un correo válido").max(255),
-  // Vacío = conservar la guardada.
-  smtpPass: z.string().optional().nullable(),
-});
+// Los datos SMTP solo se exigen con SMTP: con la API de SMTP2GO pueden quedar
+// como estaban (se conservan para poder volver) o vacíos.
+const smtpSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    provider: z.enum(["smtp", "smtp2go"]).default("smtp"),
+    smtpHost: z.string().trim().max(255).default(""),
+    smtpPort: z.number().int().min(1).max(65535).default(465),
+    smtpSecure: z.boolean().default(true),
+    smtpUser: z.string().trim().max(255).default(""),
+    fromName: z.string().trim().max(255).default("MotorDesk"),
+    fromEmail: z.string().trim().email("El remitente no es un correo válido").max(255),
+    replyTo: z.union([z.literal(""), z.string().trim().email("«Responder a» no es un correo válido").max(255)]).default(""),
+    // Vacío = conservar la guardada.
+    smtpPass: z.string().optional().nullable(),
+    smtp2goApiKey: z.string().max(255).optional().nullable(),
+  })
+  .superRefine((d, ctx) => {
+    if (d.provider !== "smtp") return;
+    if (!d.smtpHost) ctx.addIssue({ code: "custom", message: "Falta el servidor", path: ["smtpHost"] });
+    if (!d.smtpUser) ctx.addIssue({ code: "custom", message: "Falta el usuario", path: ["smtpUser"] });
+  });
 
 configRoutes.put("/smtp", async (c) => {
   const parsed = smtpSchema.safeParse(await c.req.json().catch(() => null));
@@ -264,17 +281,23 @@ configRoutes.post("/smtp/prueba", async (c) => {
   if (!resuelto) return c.json({ error: `Correo sin configurar: falta ${faltantes(await configGuardada()).join(", ")}.` }, 400);
 
   const { config, origen } = resuelto;
+  const via =
+    config.provider === "smtp2go"
+      ? "API de SMTP2GO"
+      : `Servidor: ${config.smtpHost}:${config.smtpPort}`;
   try {
-    await transporteDe(config).sendMail({
-      from: `${config.fromName} <${config.fromEmail}>`,
+    await enviarConConfig(config, {
       to: parsed.data.to,
       subject: "Prueba de correo — MotorDesk",
       html: renderEmail({
         heading: "El correo saliente funciona",
         preheader: "Prueba enviada desde el panel del proveedor.",
         blocks: [
-          paragraph("Este mensaje se envió desde el panel del proveedor para verificar la configuración SMTP."),
-          paragraph(`Servidor: ${config.smtpHost}:${config.smtpPort} · Remitente: ${config.fromEmail}`),
+          paragraph("Este mensaje se envió desde el panel del proveedor para verificar la configuración del correo."),
+          paragraph(
+            `${via} · Remitente: ${config.fromEmail}` +
+              (config.replyTo ? ` · Las respuestas van a: ${config.replyTo}` : ""),
+          ),
         ],
       }),
     });
