@@ -21,6 +21,7 @@ import { Readable } from "node:stream";
 import { prisma } from "./db.js";
 import { uploadR2Object, uploadR2Stream, getR2Buffer, deleteR2Object } from "./r2.js";
 import { TABLAS_TALLER, REFERENCIAS, referenciasDe, tablaDeModelo } from "./backup-scope.js";
+import { filaConColumnasActuales, tablaActual } from "./nombres-anteriores.js";
 
 // pg_dump se conecta directo, no por el pooler (pgbouncer rompe COPY y prepared
 // statements). DIRECT_URL es justamente la conexión directa que usa Prisma para
@@ -247,10 +248,13 @@ async function insertar(
 ): Promise<number> {
   if (bloque.filas === 0) return 0;
   const conflicto = siFalta ? " ON CONFLICT DO NOTHING" : "";
+  // Un respaldo de antes de pasar los nombres al inglés trae columnas con el
+  // nombre anterior; la traducción ocurre en SQL (ver nombres-anteriores.ts).
+  const fila = filaConColumnasActuales(bloque.tabla);
   // `bloque.json` va tal cual al parámetro: nunca se parsea en JavaScript.
   return tx.$executeRawUnsafe(
     `INSERT INTO "${bloque.tabla}"
-     SELECT (jsonb_populate_record(NULL::"${bloque.tabla}", f)).*
+     SELECT (jsonb_populate_record(NULL::"${bloque.tabla}", ${fila})).*
      FROM jsonb_array_elements($1::jsonb) AS f${conflicto}`,
     bloque.json,
   );
@@ -318,7 +322,10 @@ export async function restaurarTaller(
   }
 
   const ensayo = opciones.ensayo === true;
-  const porTabla = new Map(datos.tablas.map((t) => [t.tabla, t]));
+  // Los bloques de un respaldo anterior a los nombres en inglés vienen con el
+  // nombre viejo de la tabla: se buscan por el actual.
+  const referencias = datos.referencias.map((r) => ({ ...r, tabla: tablaActual(r.tabla) }));
+  const porTabla = new Map(datos.tablas.map((t) => [tablaActual(t.tabla), { ...t, tabla: tablaActual(t.tabla) }]));
   const resultado: ResultadoRestore = { ensayo, tablas: [], referencias: [] };
 
   try {
@@ -333,7 +340,7 @@ export async function restaurarTaller(
       await tx.$executeRawUnsafe("SET LOCAL timezone TO 'UTC'");
 
       // 1) Referencias globales primero: las filas propias apuntan a ellas.
-      for (const r of datos.referencias) {
+      for (const r of referencias) {
         const insertadas = await insertar(tx, r, true);
         resultado.referencias.push({ tabla: r.tabla, insertadas });
       }
@@ -359,7 +366,7 @@ export async function restaurarTaller(
         // 4) Secuencias al día (propias + referencias tocadas).
         await ajustarSecuencias(tx, [
           ...TABLAS_TALLER.map((t) => t.tabla),
-          ...datos.referencias.map((r) => r.tabla),
+          ...referencias.map((r) => r.tabla),
         ]);
 
         // 5) Ensayo: todo lo anterior se deshace al salir por excepción.

@@ -50,6 +50,7 @@ model User {
   salesCreated              Sale[]                     @relation("SaleCreatedBy")
 
   puentesSuperadmin PuenteSuperadmin[]
+
   @@map("users")
 }
 
@@ -77,7 +78,7 @@ model Workshop {
   whatsappStatus     String?   @map("whatsapp_status") @db.VarChar(32)
   isActive           Boolean   @default(true) @map("is_active")
   /// Si el taller tiene que firmar el contrato antes de usar su panel. Lo enciende el superadmin.
-  contratoRequerido  Boolean   @default(false) @map("contrato_requerido")
+  contratoRequerido  Boolean   @default(false) @map("contract_required")
   trialEndsAt        DateTime? @map("trial_ends_at") @db.Timestamptz(0)
   subscriptionStatus String    @default("trial") @map("subscription_status") @db.VarChar(255)
   createdAt          DateTime? @map("created_at") @db.Timestamptz(0)
@@ -232,7 +233,7 @@ model InventoryItem {
   stockQuantity    Decimal   @default(0) @map("stock_quantity") @db.Decimal(12, 3)
   /// Lo que trae un envase, en la unidad del artículo (1,2 L). Lo usa el
   /// formulario de inventario del monolito; acá solo viaja en los respaldos.
-  contenidoEnvase  Decimal?  @map("contenido_envase") @db.Decimal(12, 3)
+  contenidoEnvase  Decimal?  @map("container_size") @db.Decimal(12, 3)
   minStockQuantity Decimal   @default(0) @map("min_stock_quantity") @db.Decimal(12, 3)
   serialNumber     String?   @map("serial_number") @db.VarChar(120)
   storageLocation  String?   @map("storage_location") @db.VarChar(180)
@@ -680,26 +681,26 @@ model WorkshopDianConfig {
   /// (Nextpyme). Solo aplica a un proveedor tecnológico.
   providerEnvironment String? @map("provider_environment") @db.VarChar(16)
 
-  factusClientId          String?   @map("factus_client_id") @db.VarChar(255)
-  factusClientSecretEnc   String?   @map("factus_client_secret_enc")
-  factusUsername          String?   @map("factus_username") @db.VarChar(255)
-  factusPasswordEnc       String?   @map("factus_password_enc")
-  factusNumberingRangeId  Int?      @map("factus_numbering_range_id")
-  factusSupportRangeId    Int?      @map("factus_support_range_id")
+  factusClientId              String?   @map("factus_client_id") @db.VarChar(255)
+  factusClientSecretEnc       String?   @map("factus_client_secret_enc")
+  factusUsername              String?   @map("factus_username") @db.VarChar(255)
+  factusPasswordEnc           String?   @map("factus_password_enc")
+  factusNumberingRangeId      Int?      @map("factus_numbering_range_id")
+  factusSupportRangeId        Int?      @map("factus_support_range_id")
   /// Rangos de nota débito y nota de ajuste al documento soporte. Vacíos = el
   /// único activo de ese tipo en la cuenta de Factus (lo resuelve el monolito).
-  factusDebitNoteRangeId      Int?  @map("factus_debit_note_range_id")
-  factusAdjustmentNoteRangeId Int?  @map("factus_adjustment_note_range_id")
+  factusDebitNoteRangeId      Int?      @map("factus_debit_note_range_id")
+  factusAdjustmentNoteRangeId Int?      @map("factus_adjustment_note_range_id")
   /// Emitir documento soporte a los proveedores no obligados a facturar.
-  supportEnabled              Boolean @default(false) @map("support_enabled")
+  supportEnabled              Boolean   @default(false) @map("support_enabled")
   /// El de la nota crédito, que es otro rango y que Factus exige
   /// obligatoriamente al anular una factura.
-  factusCreditNoteRangeId Int?      @map("factus_credit_note_range_id")
+  factusCreditNoteRangeId     Int?      @map("factus_credit_note_range_id")
   /// Caché del token que mantiene el monolito. El panel no lo toca, pero al
   /// cambiar credenciales hay que borrarlo o seguiría usando el viejo.
-  factusAccessToken       String?   @map("factus_access_token")
-  factusRefreshToken      String?   @map("factus_refresh_token")
-  factusTokenExpiresAt    DateTime? @map("factus_token_expires_at") @db.Timestamptz(0)
+  factusAccessToken           String?   @map("factus_access_token")
+  factusRefreshToken          String?   @map("factus_refresh_token")
+  factusTokenExpiresAt        DateTime? @map("factus_token_expires_at") @db.Timestamptz(0)
 
   // --- Nextpyme ---
   /// La URL de su API: la de producción o la de habilitación, que Nextpyme
@@ -725,8 +726,8 @@ model WorkshopDianConfig {
   /// De dónde gasta el taller sus documentos: "individual" (paquete propio en
   /// el proveedor) o "bolsa" (repartidos de una bolsa multifacturador). Ver
   /// src/lib/facturacion/cupo.ts en el monolito.
-  cupoModalidad String  @default("individual") @map("cupo_modalidad") @db.VarChar(16)
-  cupoBolsaId   BigInt? @map("cupo_bolsa_id")
+  cupoModalidad String  @default("individual") @map("quota_mode") @db.VarChar(16)
+  cupoBolsaId   BigInt? @map("quota_pool_id")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(0)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(0)
@@ -744,19 +745,19 @@ model WorkshopDianConfig {
 /// compra y lo que no se gaste se pierde.
 model BolsaDeFacturacion {
   id         BigInt   @id @default(autoincrement())
-  proveedor  String   @default("factus") @db.VarChar(32)
-  nombre     String   @db.VarChar(120)
-  documentos Int
-  precio     Decimal? @db.Decimal(14, 2)
-  compradaEl DateTime @map("comprada_el") @db.Date
-  venceEl    DateTime @map("vence_el") @db.Date
-  notas      String?
+  proveedor  String   @default("factus") @map("provider") @db.VarChar(32)
+  nombre     String   @map("name") @db.VarChar(120)
+  documentos Int      @map("documents")
+  precio     Decimal? @map("price") @db.Decimal(14, 2)
+  compradaEl DateTime @map("purchased_on") @db.Date
+  venceEl    DateTime @map("expires_on") @db.Date
+  notas      String?  @map("notes")
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(0)
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(0)
 
   talleres WorkshopDianConfig[]
 
-  @@map("fe_bolsas")
+  @@map("einvoice_pools")
 }
 
 /// El año de facturación electrónica que un taller le paga a MotorDesk: cuántos
@@ -771,23 +772,23 @@ model PaqueteDeFacturacion {
   workshopId     BigInt    @map("workshop_id")
   /// Código del nivel publicado (fe-basico, fe-estandar, fe-alto) o null si se
   /// pactó a la medida.
-  nivel          String?   @db.VarChar(32)
-  documentos     Int
-  precio         Decimal?  @db.Decimal(14, 2)
-  pagadoEl       DateTime  @map("pagado_el") @db.Date
-  activableDesde DateTime  @map("activable_desde") @db.Date
-  activadoEl     DateTime? @map("activado_el") @db.Timestamptz(0)
-  venceEl        DateTime? @map("vence_el") @db.Timestamptz(0)
+  nivel          String?   @map("tier") @db.VarChar(32)
+  documentos     Int       @map("documents")
+  precio         Decimal?  @map("price") @db.Decimal(14, 2)
+  pagadoEl       DateTime  @map("paid_on") @db.Date
+  activableDesde DateTime  @map("activatable_from") @db.Date
+  activadoEl     DateTime? @map("activated_at") @db.Timestamptz(0)
+  venceEl        DateTime? @map("expires_at") @db.Timestamptz(0)
   /// Retracto o devolución. Un paquete anulado no cuenta para nada.
-  anuladoEl      DateTime? @map("anulado_el") @db.Timestamptz(0)
-  notas          String?
+  anuladoEl      DateTime? @map("voided_at") @db.Timestamptz(0)
+  notas          String?   @map("notes")
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(0)
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(0)
 
   workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
 
   @@index([workshopId, venceEl])
-  @@map("fe_paquetes")
+  @@map("einvoice_packages")
 }
 
 model DianElectronicDocument {
@@ -1383,7 +1384,7 @@ model ChatSession {
   closedAt        DateTime? @map("closed_at") @db.Timestamptz(6)
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   /// "web" (el chat de la landing) | "whatsapp" (escribió al número de MotorDesk).
-  canal           String    @default("web") @db.VarChar(16)
+  canal           String    @default("web") @map("channel") @db.VarChar(16)
   /// El chat de WhatsApp al que se responde, tal cual: "57300…@c.us" o "…@lid".
   whatsappChatId  String?   @map("whatsapp_chat_id") @db.VarChar(64)
 
@@ -1404,7 +1405,7 @@ model ChatMessage {
   text      String
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session ChatSession       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   media   ChatMessageMedia?
 
   @@index([sessionId, id])
@@ -1416,8 +1417,8 @@ model ChatMessage {
 model ChatMessageMedia {
   messageId BigInt   @id @map("message_id")
   mime      String   @db.VarChar(100)
-  nombre    String?  @db.VarChar(255)
-  tamano    Int
+  nombre    String?  @map("name") @db.VarChar(255)
+  tamano    Int      @map("size")
   bytes     Bytes
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -1501,14 +1502,14 @@ model CustomerWorkshop {
 model PuenteSuperadmin {
   tokenHash String    @id @map("token_hash") @db.Char(64)
   userId    BigInt    @map("user_id")
-  destino   String    @db.VarChar(255)
-  expiraEn  DateTime  @map("expira_en") @db.Timestamptz(6)
-  usadoEn   DateTime? @map("usado_en") @db.Timestamptz(6)
-  creadoEn  DateTime  @default(now()) @map("creado_en") @db.Timestamptz(6)
+  destino   String    @map("destination") @db.VarChar(255)
+  expiraEn  DateTime  @map("expires_at") @db.Timestamptz(6)
+  usadoEn   DateTime? @map("used_at") @db.Timestamptz(6)
+  creadoEn  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@map("puentes_superadmin")
+  @@map("superadmin_bridges")
 }
 
 /// Quien se unió al Club del Taller desde /club (ver migración
@@ -1516,29 +1517,29 @@ model PuenteSuperadmin {
 /// llenar el formulario se actualizan sus datos y se conserva el estado.
 model ClubRegistro {
   id            BigInt    @id @default(autoincrement())
-  nombre        String    @db.VarChar(120)
+  nombre        String    @map("name") @db.VarChar(120)
   /// Solo dígitos, con el indicativo: "573001234567".
-  telefono      String    @unique @db.VarChar(20)
+  telefono      String    @unique @map("phone") @db.VarChar(20)
   /// "mecanico" | "dueno"
-  rol           String    @db.VarChar(16)
-  marcas        String[]  @default([]) @db.VarChar(40)
-  ciudad        String?   @db.VarChar(80)
+  rol           String    @map("role") @db.VarChar(16)
+  marcas        String[]  @default([]) @map("brands") @db.VarChar(40)
+  ciudad        String?   @map("city") @db.VarChar(80)
   /// De qué contenido llegó (`?origen=` o `utm_content`): "reel-aceite-carro".
-  origen        String?   @db.VarChar(80)
+  origen        String?   @map("source") @db.VarChar(80)
   /// La ficha que pidió (`?ficha=`): "NS200".
-  ficha         String?   @db.VarChar(40)
+  ficha         String?   @map("spec_sheet") @db.VarChar(40)
   /// "nuevo" | "contactado" | "cliente" | "descartado"
-  estado        String    @default("nuevo") @db.VarChar(16)
+  estado        String    @default("nuevo") @map("status") @db.VarChar(16)
   ip            String?   @db.VarChar(64)
   userAgent     String?   @map("user_agent") @db.VarChar(255)
   /// Veces que llenó el formulario.
-  envios        Int       @default(1)
-  creadoEn      DateTime  @default(now()) @map("creado_en") @db.Timestamptz(3)
-  actualizadoEn DateTime  @default(now()) @updatedAt @map("actualizado_en") @db.Timestamptz(3)
-  contactadoEn  DateTime? @map("contactado_en") @db.Timestamptz(3)
+  envios        Int       @default(1) @map("submissions")
+  creadoEn      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  actualizadoEn DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  contactadoEn  DateTime? @map("contacted_at") @db.Timestamptz(3)
 
   @@index([creadoEn])
   @@index([estado, creadoEn])
   @@index([ip, creadoEn])
-  @@map("club_registros")
+  @@map("club_registrations")
 }

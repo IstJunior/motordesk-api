@@ -300,8 +300,8 @@ async function estadoContrato() {
   const { config, guardado } = await configContrato();
   // Crudo: el esquema de la API no trae el contrato, que es del monolito.
   const [cuentas] = await prisma.$queryRaw<{ requeridos: bigint; firmados: bigint }[]>`
-    SELECT (SELECT count(*) FROM workshops WHERE contrato_requerido) AS requeridos,
-           (SELECT count(*) FROM contratos_firmados) AS firmados`;
+    SELECT (SELECT count(*) FROM workshops WHERE contract_required) AS requeridos,
+           (SELECT count(*) FROM signed_contracts) AS firmados`;
   const faltan = [!config.nombre && "nombre del prestador", !config.documento && "documento del prestador"].filter(
     (x): x is string => Boolean(x),
   );

@@ -192,8 +192,8 @@ talleresRoutes.get("/:id", async (c) => {
 // (sin los datos del prestador, encender el interruptor no bloquea a nadie).
 async function contratoDelTaller(id: bigint) {
   const [firmado] = await prisma.$queryRaw<{ codigo: string; version: string; firmado_en: Date; firmante_nombre: string }[]>`
-    SELECT codigo, version, firmado_en, firmante_nombre FROM contratos_firmados
-    WHERE workshop_id = ${id} ORDER BY firmado_en DESC LIMIT 1`;
+    SELECT code AS codigo, version, signed_at AS firmado_en, signer_name AS firmante_nombre FROM signed_contracts
+    WHERE workshop_id = ${id} ORDER BY signed_at DESC LIMIT 1`;
   return {
     firmado: firmado
       ? { codigo: firmado.codigo, version: firmado.version, firmadoEn: firmado.firmado_en, firmante: firmado.firmante_nombre }
