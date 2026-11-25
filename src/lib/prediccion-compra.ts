@@ -60,11 +60,14 @@ const MODULOS_LLENOS = 4;
 const DIAS_APAGADO = 7;
 
 /**
- * Talleres reales de correo pero que fueron de prueba: no son ni candidatos
- * ni «se fueron», y contarlos tuerce la conversión.
+ * Talleres reales de correo pero que no fueron clientes en prueba: no son ni
+ * candidatos ni «se fueron», y contarlos tuerce la conversión.
  *   74  Mundo Motos (prueba interna, septiembre de 2026)
+ *   78  Manus Bike y 80 Kebin motos: creadores de contenido a los que MotorDesk
+ *       les ofreció el sistema gratis; no llegaron buscando un software y su
+ *       operación no lo necesita. Se les quitó el acceso (2026-11-24).
  */
-const EXCLUIDOS = new Set(["74"]);
+const EXCLUIDOS = new Set(["74", "78", "80"]);
 
 // ── Tipos de la respuesta ────────────────────────────────────────────────────
 
