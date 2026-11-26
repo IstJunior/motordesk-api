@@ -79,6 +79,8 @@ model Workshop {
   isActive           Boolean   @default(true) @map("is_active")
   /// Si el taller tiene que firmar el contrato antes de usar su panel. Lo enciende el superadmin.
   contratoRequerido  Boolean   @default(false) @map("contract_required")
+  /// Fuera de la eliminación por inactividad del monolito (lib/inactividad).
+  exentoInactividad  Boolean   @default(false) @map("inactivity_exempt")
   trialEndsAt        DateTime? @map("trial_ends_at") @db.Timestamptz(0)
   subscriptionStatus String    @default("trial") @map("subscription_status") @db.VarChar(255)
   createdAt          DateTime? @map("created_at") @db.Timestamptz(0)

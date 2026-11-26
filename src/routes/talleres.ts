@@ -148,6 +148,7 @@ talleresRoutes.get("/:id", async (c) => {
       city: true,
       isActive: true,
       contratoRequerido: true,
+      exentoInactividad: true,
       subscriptionStatus: true,
       trialEndsAt: true,
       enabledModules: true,
@@ -185,7 +186,36 @@ talleresRoutes.get("/:id", async (c) => {
     modules: normalizarModulos(w.enabledModules),
     contrato: await contratoDelTaller(id),
     silenciado: await tallerSilenciado(id),
+    inactividad: await inactividadDelTaller(id),
   });
+});
+
+// Eliminación por inactividad (la corre el monolito, lib/inactividad): el
+// último aviso enviado y la fecha que se le prometió al taller.
+async function inactividadDelTaller(id: bigint) {
+  const [ultimo] = await prisma.$queryRaw<Array<{ tipo: string; enviado: Date; elimina: string }>>`
+    SELECT kind AS tipo, sent_at AS enviado, to_char(deletion_date, 'YYYY-MM-DD') AS elimina
+      FROM workshop_inactivity_notices
+     WHERE workshop_id = ${id}
+     ORDER BY sent_at DESC
+     LIMIT 1`.catch(() => []);
+  const pagos = await prisma.invoice.count({ where: { workshopId: id, status: "paid" } });
+  return { aplica: pagos === 0, ultimoAviso: ultimo ?? null };
+}
+
+// PUT /talleres/:id/inactividad — { exento: bool }
+//
+// Exento, el taller nunca entra a la eliminación por inactividad (demos y casos
+// especiales). Solo importa mientras no haya pagado: con un pago ya no aplica.
+const inactividadSchema = z.object({ exento: z.boolean() });
+talleresRoutes.put("/:id/inactividad", async (c) => {
+  const id = BigInt(c.req.param("id"));
+  const parsed = inactividadSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "Datos inválidos" }, 400);
+  const existe = await prisma.workshop.findFirst({ where: { id, deletedAt: null }, select: { id: true } });
+  if (!existe) return c.json({ error: "Taller no encontrado" }, 404);
+  const w = await prisma.workshop.update({ where: { id }, data: { exentoInactividad: parsed.data.exento }, select: { exentoInactividad: true } });
+  return c.json({ exento: w.exentoInactividad });
 });
 
 // El contrato del taller: si se le pide, si ya lo firmó y si se puede firmar
