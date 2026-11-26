@@ -2,6 +2,7 @@ import nodemailer from "nodemailer";
 import { configEfectiva, configGuardada, faltantes, type ConfigCorreo, type OrigenCorreo } from "./correo-config.js";
 import { htmlATexto, recibeSoloTextoSimple } from "./texto-simple.js";
 import { enviarPorSmtp2go } from "./smtp2go.js";
+import { copiaOcultaPara } from "./copia-oculta.js";
 
 // Correo saliente de la API del proveedor.
 //
@@ -41,6 +42,7 @@ export async function enviarConConfig(
   const soloTexto = recibeSoloTextoSimple(input.to);
   const from = `${config.fromName} <${config.fromEmail}>`;
   const replyTo = config.replyTo ?? undefined;
+  const bcc = copiaOcultaPara(input.to);
 
   if (config.provider === "smtp2go") {
     await enviarPorSmtp2go({
@@ -48,6 +50,7 @@ export async function enviarConConfig(
       from,
       to: input.to,
       replyTo,
+      bcc,
       subject: input.subject,
       ...(soloTexto ? { text: htmlATexto(input.html) } : { html: input.html }),
     });
@@ -57,6 +60,7 @@ export async function enviarConConfig(
   await transporteDe(config).sendMail({
     from,
     to: input.to,
+    ...(bcc.length > 0 ? { bcc } : {}),
     ...(replyTo ? { replyTo } : {}),
     subject: input.subject,
     ...(soloTexto ? { text: htmlATexto(input.html) } : { html: input.html }),

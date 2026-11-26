@@ -40,6 +40,8 @@ export async function enviarPorSmtp2go(input: {
   to: string;
   /** A dónde van las respuestas. El remitente puede no ser un buzón. */
   replyTo?: string | null;
+  /** Copia oculta (copia-oculta.ts). */
+  bcc?: string[];
   subject: string;
   html?: string;
   text?: string;
@@ -62,6 +64,7 @@ export async function enviarPorSmtp2go(input: {
       body: JSON.stringify({
         sender: input.from,
         to: [input.to],
+        ...(input.bcc && input.bcc.length > 0 ? { bcc: input.bcc } : {}),
         subject: input.subject,
         ...(input.html ? { html_body: input.html } : {}),
         ...(texto ? { text_body: texto } : {}),
